@@ -1,0 +1,17 @@
+# Keep the api/worker build context lean (deployment fix 2026-08-11):
+# without this, ~1GB of host artifacts is shipped to the Docker daemon on
+# every build — enough to fail builds on a nearly-full disk.
+.git
+.venv
+__pycache__
+**/__pycache__
+.pytest_cache
+.ruff_cache
+*.db
+data/
+apps/web/node_modules
+apps/web/.next
+apps/web/tsconfig.tsbuildinfo
+# NOTE: backend/prompts/*.md are runtime files — never ignore *.md globally.
+docs/
+tests/

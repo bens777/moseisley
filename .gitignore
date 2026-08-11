@@ -1,0 +1,35 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.db
+*.sqlite3
+.env
+.env.local
+node_modules/
+apps/web/.next/
+apps/web/out/
+dist/
+.coverage
+tmp/
+*.tsbuildinfo
+
+# secrets & local env (never commit)
+.env.*
+!.env.example
+
+# editor swap/backup files
+*.swp
+*.swo
+*~
+.DS_Store
+
+# build & runtime artifacts
+.next/
+data/
+*.log
+logs/
+.claude/
+*.orig
+*.rej

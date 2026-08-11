@@ -1,0 +1,7 @@
+# Keep the web build context lean (deployment fix 2026-08-11): the image runs
+# its own `next build`; host node_modules/.next must never enter the context.
+node_modules
+.next
+tsconfig.tsbuildinfo
+scripts
+Dockerfile

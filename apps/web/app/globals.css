@@ -1,0 +1,693 @@
+@import "tailwindcss";
+
+/* Moseisley.sh design tokens — deep-space ground and purple/neon primary,
+   harmonized with the public .cantina palette (--cw-*) so the dashboard and
+   the cantina world read as one product. Industrial radii, terminal details.
+   Status tokens stay semantically distinct: ok=green, warn=amber, crit=red
+   (the Emergency Stop must remain unmistakably red). */
+@theme {
+  --color-ground: #07040f;        /* = --cw-black */
+  --color-panel: #171029;         /* = --cw-panel */
+  --color-raised: #221838;        /* = --cw-raised */
+  --color-line: #2a2040;          /* between panel and --cw-line */
+  --color-line-strong: #35284f;   /* = --cw-line */
+
+  --color-ink: #f1eaff;           /* = --cw-ink */
+  --color-ink-mute: #b6a9d8;      /* = --cw-mute */
+  --color-ink-faint: #8a7cb0;     /* --cw-faint, lifted to hold 3:1 on panel */
+
+  --color-brand: #a06ef2;         /* = --cw-purple */
+  --color-brand-soft: #c79bff;    /* lighter purple for hover states */
+  --color-copper: #e14fd0;        /* = --cw-magenta (secondary accent) */
+  --color-signal: #35d8e8;        /* = --cw-cyan */
+
+  --color-ok: #6fe3a1;            /* = .cw-led-green */
+  --color-warn: #e8b34d;          /* = --cw-gold */
+  --color-crit: #e06c5a;          /* unchanged — emergency red */
+
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+body {
+  @apply bg-ground text-ink antialiased;
+  font-family: var(--font-sans);
+  /* faint coordinate grid — command-center ground texture */
+  background-image:
+    linear-gradient(to right, rgb(241 234 255 / 0.022) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(241 234 255 / 0.022) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* visible keyboard focus everywhere, on-brand */
+:focus-visible {
+  outline: 2px solid rgb(160 110 242 / 0.7);
+  outline-offset: 2px;
+}
+
+/* status LED with optional live pulse */
+.led {
+  @apply inline-block h-1.5 w-1.5 shrink-0 rounded-full;
+}
+.led-pulse {
+  animation: led-pulse 1.6s ease-in-out infinite;
+}
+@keyframes led-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* radar sweep for scanning states */
+.scanline {
+  position: relative;
+  overflow: hidden;
+}
+.scanline::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(53 216 232 / 0.08), transparent);
+  transform: translateX(-100%);
+  animation: scan 2.4s linear infinite;
+  pointer-events: none;
+}
+@keyframes scan {
+  to { transform: translateX(100%); }
+}
+
+/* mobile nav drawer */
+.drawer-enter {
+  animation: drawer-in 0.18s ease-out;
+}
+@keyframes drawer-in {
+  from { transform: translateX(-16px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   CANTINA ATMOSPHERE — landing page world layers.
+   All motion is transform/opacity only; everything decorative is
+   aria-hidden in markup and silenced under prefers-reduced-motion. */
+
+/* layered star field — two drifting depths */
+.stars,
+.stars-far {
+  position: absolute;
+  inset: -50% 0 0 0;
+  pointer-events: none;
+  background-repeat: repeat;
+}
+.stars {
+  background-image:
+    radial-gradient(1px 1px at 22px 34px, rgb(241 234 255 / 0.55), transparent 100%),
+    radial-gradient(1px 1px at 120px 90px, rgb(241 234 255 / 0.4), transparent 100%),
+    radial-gradient(1.5px 1.5px at 200px 20px, rgb(53 216 232 / 0.5), transparent 100%),
+    radial-gradient(1px 1px at 300px 140px, rgb(241 234 255 / 0.45), transparent 100%),
+    radial-gradient(1px 1px at 80px 190px, rgb(160 110 242 / 0.45), transparent 100%),
+    radial-gradient(1.5px 1.5px at 260px 230px, rgb(241 234 255 / 0.35), transparent 100%);
+  background-size: 340px 260px;
+  animation: stars-drift 180s linear infinite;
+}
+.stars-far {
+  background-image:
+    radial-gradient(1px 1px at 40px 60px, rgb(241 234 255 / 0.22), transparent 100%),
+    radial-gradient(1px 1px at 150px 160px, rgb(241 234 255 / 0.18), transparent 100%),
+    radial-gradient(1px 1px at 230px 40px, rgb(241 234 255 / 0.2), transparent 100%),
+    radial-gradient(1px 1px at 90px 220px, rgb(53 216 232 / 0.16), transparent 100%);
+  background-size: 280px 260px;
+  animation: stars-drift 320s linear infinite reverse;
+}
+@keyframes stars-drift {
+  to { transform: translateY(260px); }
+}
+
+/* floating dust motes rising through the cantina light */
+.dust {
+  position: absolute;
+  bottom: -4px;
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: rgb(160 110 242 / 0.5);
+  filter: blur(0.5px);
+  pointer-events: none;
+  animation: dust-rise 14s linear infinite;
+  opacity: 0;
+}
+@keyframes dust-rise {
+  0% { transform: translateY(0) translateX(0); opacity: 0; }
+  8% { opacity: 0.7; }
+  60% { opacity: 0.35; }
+  100% { transform: translateY(-420px) translateX(24px); opacity: 0; }
+}
+
+/* landing-pad floor — perspective grid falling toward the horizon */
+.pad-floor {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 42%;
+  pointer-events: none;
+  perspective: 320px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to top, black 30%, transparent 100%);
+  mask-image: linear-gradient(to top, black 30%, transparent 100%);
+}
+.pad-floor::before {
+  content: "";
+  position: absolute;
+  inset: -100% -60%;
+  background-image:
+    linear-gradient(to right, rgb(160 110 242 / 0.13) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(160 110 242 / 0.13) 1px, transparent 1px);
+  background-size: 56px 56px;
+  transform: rotateX(62deg);
+  transform-origin: 50% 0;
+  animation: floor-run 7s linear infinite;
+}
+@keyframes floor-run {
+  to { background-position-y: 56px; }
+}
+
+/* horizon glow — the cantina light on the ridge */
+.horizon-glow {
+  position: absolute;
+  left: 50%;
+  bottom: -12%;
+  width: 130%;
+  height: 55%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background: radial-gradient(ellipse 60% 90% at 50% 100%,
+    rgb(160 110 242 / 0.22), rgb(225 79 208 / 0.1) 42%, transparent 72%);
+}
+
+/* holographic panel — glass/metal hybrid with lit edge */
+.holo {
+  position: relative;
+  border: 1px solid rgb(53 40 79 / 0.9);
+  background:
+    linear-gradient(160deg, rgb(34 24 56 / 0.92), rgb(23 16 41 / 0.96));
+  box-shadow:
+    0 0 0 1px rgb(7 4 15 / 0.6),
+    0 18px 50px -18px rgb(0 0 0 / 0.85),
+    inset 0 1px 0 rgb(241 234 255 / 0.05);
+}
+.holo::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom,
+    rgb(241 234 255 / 0.012) 0 1px, transparent 1px 3px);
+}
+.holo-glow-brand {
+  box-shadow:
+    0 0 0 1px rgb(160 110 242 / 0.18),
+    0 0 34px -6px rgb(160 110 242 / 0.2),
+    0 18px 50px -18px rgb(0 0 0 / 0.85);
+}
+.holo-glow-signal {
+  box-shadow:
+    0 0 0 1px rgb(53 216 232 / 0.16),
+    0 0 34px -8px rgb(53 216 232 / 0.18),
+    0 18px 50px -18px rgb(0 0 0 / 0.85);
+}
+
+/* radar scope — rotating sweep + pinging blips */
+.radar-scope {
+  position: relative;
+  border-radius: 9999px;
+  overflow: hidden;
+  background:
+    repeating-radial-gradient(circle at 50% 50%,
+      transparent 0 23%, rgb(53 216 232 / 0.1) 23.5% 24%, transparent 24.5% 48%,
+      rgb(53 216 232 / 0.1) 48.5% 49%, transparent 49.5% 73%,
+      rgb(53 216 232 / 0.12) 73.5% 74%, transparent 74.5%),
+    linear-gradient(to right, transparent 49.6%, rgb(53 216 232 / 0.1) 50%, transparent 50.4%),
+    linear-gradient(to bottom, transparent 49.6%, rgb(53 216 232 / 0.1) 50%, transparent 50.4%),
+    radial-gradient(circle at 50% 50%, rgb(53 216 232 / 0.06), rgb(7 4 15 / 0.9) 75%);
+  border: 1px solid rgb(53 216 232 / 0.25);
+}
+.radar-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(from 0deg,
+    rgb(53 216 232 / 0.32), rgb(53 216 232 / 0.05) 18%, transparent 32%);
+  animation: radar-turn 5s linear infinite;
+}
+@keyframes radar-turn {
+  to { transform: rotate(360deg); }
+}
+.radar-blip {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: rgb(53 216 232 / 0.9);
+  animation: blip-ping 5s ease-out infinite;
+}
+.radar-blip-brand {
+  background: rgb(160 110 242 / 0.95);
+}
+@keyframes blip-ping {
+  0%, 12% { opacity: 0; transform: scale(0.6); }
+  16% { opacity: 1; transform: scale(1.5); box-shadow: 0 0 12px 2px rgb(53 216 232 / 0.5); }
+  38% { opacity: 0.85; transform: scale(1); box-shadow: none; }
+  85% { opacity: 0.25; }
+  100% { opacity: 0; }
+}
+
+/* terminal feed — endless upward crawl (list duplicated in markup) */
+.feed-viewport {
+  position: relative;
+  overflow: hidden;
+}
+.feed-crawl {
+  animation: feed-up 22s linear infinite;
+}
+@keyframes feed-up {
+  to { transform: translateY(-50%); }
+}
+.feed-viewport::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom,
+    rgb(23 16 41) 0%, transparent 18%, transparent 78%, rgb(23 16 41) 100%);
+}
+
+/* neon cantina sign — warm flicker, no seizure-rate strobing */
+.neon-sign {
+  color: #c79bff;
+  text-shadow:
+    0 0 6px rgb(160 110 242 / 0.9),
+    0 0 18px rgb(160 110 242 / 0.55),
+    0 0 42px rgb(225 79 208 / 0.45);
+  animation: neon-hum 9s ease-in-out infinite;
+}
+.neon-sign-signal {
+  color: #9be8ec;
+  text-shadow:
+    0 0 6px rgb(53 216 232 / 0.9),
+    0 0 18px rgb(53 216 232 / 0.5),
+    0 0 40px rgb(53 216 232 / 0.35);
+}
+@keyframes neon-hum {
+  0%, 100% { opacity: 1; }
+  7% { opacity: 0.86; }
+  9% { opacity: 1; }
+  54% { opacity: 0.92; }
+  56% { opacity: 1; }
+}
+
+/* glow text + CTA treatments */
+.glow-brand-text {
+  text-shadow: 0 0 22px rgb(160 110 242 / 0.4);
+}
+.cta-beacon {
+  box-shadow:
+    0 0 0 1px rgb(160 110 242 / 0.4),
+    0 0 26px -4px rgb(160 110 242 / 0.55),
+    0 10px 28px -12px rgb(0 0 0 / 0.8);
+  transition: box-shadow 0.25s ease, transform 0.25s ease, background-color 0.25s ease;
+}
+.cta-beacon:hover {
+  box-shadow:
+    0 0 0 1px rgb(245 189 107 / 0.7),
+    0 0 40px -2px rgb(160 110 242 / 0.75),
+    0 12px 30px -12px rgb(0 0 0 / 0.8);
+  transform: translateY(-1px);
+}
+
+/* crew insignia cards */
+.crew-card {
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.crew-card:hover {
+  transform: translateY(-4px);
+  border-color: rgb(160 110 242 / 0.5);
+  box-shadow: 0 0 30px -8px rgb(160 110 242 / 0.3), 0 16px 34px -20px rgb(0 0 0 / 0.9);
+}
+.insignia {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex-shrink: 0;
+  clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+  background:
+    linear-gradient(150deg, rgb(53 40 79), rgb(34 24 56) 55%),
+    rgb(34 24 56);
+  color: var(--color-brand);
+  font-family: var(--font-mono);
+}
+.insignia::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+  background: rgb(7 4 15);
+}
+.insignia > * {
+  position: relative;
+}
+
+/* mission-flow connector — vertical dashes on mobile, horizontal at md+ */
+.mission-connector {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  height: 2rem;
+  width: 2px;
+  transform: translateX(-50%);
+  background-image: linear-gradient(to bottom, rgb(160 110 242 / 0.5) 55%, transparent 0);
+  background-size: 2px 10px;
+}
+@media (min-width: 768px) {
+  .mission-connector {
+    left: 100%;
+    top: 1.75rem;
+    height: 2px;
+    width: 1.5rem;
+    transform: none;
+    background-image: linear-gradient(to right, rgb(160 110 242 / 0.5) 55%, transparent 0);
+    background-size: 10px 2px;
+  }
+}
+
+/* the big red one */
+.estop {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 5.5rem;
+  height: 5.5rem;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 38% 32%, #f08573, #c94a38 58%, #8f3021);
+  box-shadow:
+    0 0 0 6px rgb(34 24 56),
+    0 0 0 7px rgb(53 40 79),
+    0 0 34px -4px rgb(224 108 90 / 0.55),
+    inset 0 -6px 12px rgb(0 0 0 / 0.4);
+  animation: estop-breathe 3.2s ease-in-out infinite;
+}
+@keyframes estop-breathe {
+  0%, 100% { box-shadow: 0 0 0 6px rgb(34 24 56), 0 0 0 7px rgb(53 40 79), 0 0 26px -6px rgb(224 108 90 / 0.4), inset 0 -6px 12px rgb(0 0 0 / 0.4); }
+  50% { box-shadow: 0 0 0 6px rgb(34 24 56), 0 0 0 7px rgb(53 40 79), 0 0 44px -2px rgb(224 108 90 / 0.65), inset 0 -6px 12px rgb(0 0 0 / 0.4); }
+}
+
+/* ── cantina scene (SVG hero illustration) animations ── */
+.led-blink { animation: led-pulse 1.8s ease-in-out infinite; }
+.led-blink-slow { animation: led-pulse 3.4s ease-in-out infinite; }
+.star-twinkle { animation: led-pulse 4.5s ease-in-out infinite; }
+.holo-flicker { animation: holo-flick 7s ease-in-out infinite; }
+@keyframes holo-flick {
+  0%, 100% { opacity: 1; }
+  4% { opacity: 0.75; }
+  6% { opacity: 1; }
+  47% { opacity: 0.9; }
+  49% { opacity: 1; }
+}
+.holo-ring { animation: holo-ring-spin 9s linear infinite; transform-origin: 600px 612px; }
+@keyframes holo-ring-spin {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.15; }
+}
+.radar-sweep-svg { animation: radar-turn 6s linear infinite; }
+.planet-drift { animation: planet-bob 26s ease-in-out infinite; }
+@keyframes planet-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.ship-drift { animation: ship-fly 30s linear infinite; }
+@keyframes ship-fly {
+  0% { transform: translate(0, 0); opacity: 0; }
+  6% { opacity: 1; }
+  60% { transform: translate(150px, -60px); opacity: 1; }
+  70% { transform: translate(178px, -72px); opacity: 0; }
+  100% { transform: translate(178px, -72px); opacity: 0; }
+}
+.core-pulse { animation: core-breathe 3s ease-in-out infinite; }
+@keyframes core-breathe {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.6; }
+}
+.spark { animation: spark-pop 2.2s steps(1) infinite; }
+@keyframes spark-pop {
+  0%, 55%, 100% { opacity: 0; }
+  60%, 75% { opacity: 1; }
+}
+.neon-svg { animation: neon-hum 9s ease-in-out infinite; }
+
+/* soft-edge blend so the scene sits IN the page, not in a box */
+.scene-blend {
+  -webkit-mask-image: radial-gradient(120% 100% at 50% 42%, black 55%, transparent 98%);
+  mask-image: radial-gradient(120% 100% at 50% 42%, black 55%, transparent 98%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CANTINA WORLD — public-brand design system derived from the official
+   Moseisley logo (purple cephalopod, space black, magenta/cyan neon,
+   gold accents). Scoped under .cantina: the authenticated product keeps
+   its own operational palette untouched. */
+.cantina {
+  --cw-black: #07040f;
+  --cw-deep: #0e0919;
+  --cw-panel: #171029;
+  --cw-raised: #221838;
+  --cw-line: #35284f;
+  --cw-purple: #a06ef2;
+  --cw-purple-deep: #7c3aed;
+  --cw-magenta: #e14fd0;
+  --cw-cyan: #35d8e8;
+  --cw-blue: #4f7df6;
+  --cw-gold: #e8b34d;
+  --cw-ink: #f1eaff;
+  --cw-mute: #b6a9d8;
+  --cw-faint: #7d6fa3;
+  background:
+    radial-gradient(1100px 600px at 85% -5%, rgb(124 58 237 / 0.16), transparent 65%),
+    radial-gradient(900px 500px at 5% 25%, rgb(225 79 208 / 0.10), transparent 60%),
+    radial-gradient(1000px 700px at 60% 110%, rgb(53 216 232 / 0.07), transparent 60%),
+    var(--cw-black);
+  color: var(--cw-ink);
+}
+
+/* purple-cast star field for the cantina world */
+.cw-stars {
+  position: absolute;
+  inset: -50% 0 0 0;
+  pointer-events: none;
+  background-repeat: repeat;
+  background-image:
+    radial-gradient(1.4px 1.4px at 25px 40px, rgb(241 234 255 / 0.7), transparent 100%),
+    radial-gradient(1px 1px at 130px 100px, rgb(160 110 242 / 0.8), transparent 100%),
+    radial-gradient(1.8px 1.8px at 210px 30px, rgb(53 216 232 / 0.75), transparent 100%),
+    radial-gradient(1px 1px at 310px 150px, rgb(241 234 255 / 0.5), transparent 100%),
+    radial-gradient(1.4px 1.4px at 90px 200px, rgb(225 79 208 / 0.6), transparent 100%),
+    radial-gradient(1px 1px at 270px 240px, rgb(241 234 255 / 0.45), transparent 100%);
+  background-size: 360px 280px;
+  animation: stars-drift 200s linear infinite;
+}
+
+/* section headline treatment — expressive, not terminal */
+.cw-title {
+  background: linear-gradient(92deg, var(--cw-magenta), var(--cw-purple) 45%, var(--cw-cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* irregular neon panel — replaces thin-border SaaS rectangles */
+.cw-panel {
+  position: relative;
+  border-radius: 26px 10px 26px 10px;
+  background:
+    linear-gradient(160deg, rgb(34 24 56 / 0.85), rgb(23 16 41 / 0.95));
+  border: 1px solid var(--cw-line);
+  box-shadow:
+    0 0 0 1px rgb(7 4 15 / 0.7),
+    0 22px 50px -20px rgb(0 0 0 / 0.9),
+    inset 0 1px 0 rgb(241 234 255 / 0.06);
+}
+.cw-panel-magenta {
+  border-color: rgb(225 79 208 / 0.35);
+  box-shadow: 0 0 34px -8px rgb(225 79 208 / 0.35), 0 22px 50px -20px rgb(0 0 0 / 0.9);
+}
+.cw-panel-cyan {
+  border-color: rgb(53 216 232 / 0.35);
+  box-shadow: 0 0 34px -8px rgb(53 216 232 / 0.3), 0 22px 50px -20px rgb(0 0 0 / 0.9);
+}
+.cw-panel-gold {
+  border-color: rgb(232 179 77 / 0.45);
+  box-shadow: 0 0 34px -8px rgb(232 179 77 / 0.35), 0 22px 50px -20px rgb(0 0 0 / 0.9);
+}
+
+/* framed key art */
+.cw-art {
+  border-radius: 24px;
+  border: 2px solid rgb(160 110 242 / 0.5);
+  box-shadow:
+    0 0 0 1px rgb(7 4 15),
+    0 0 60px -12px rgb(124 58 237 / 0.55),
+    0 30px 60px -25px rgb(0 0 0 / 0.95);
+}
+
+/* circular character portrait */
+.cw-portrait {
+  border-radius: 9999px;
+  border: 3px solid rgb(160 110 242 / 0.65);
+  box-shadow: 0 0 30px -6px rgb(124 58 237 / 0.55), 0 12px 30px -12px rgb(0 0 0 / 0.9);
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.cw-char:hover .cw-portrait {
+  transform: translateY(-6px) scale(1.03);
+  border-color: rgb(225 79 208 / 0.85);
+  box-shadow: 0 0 44px -4px rgb(225 79 208 / 0.6), 0 18px 36px -14px rgb(0 0 0 / 0.9);
+}
+
+/* gentle idle float for characters / props */
+.cw-float { animation: cw-float 7s ease-in-out infinite; }
+.cw-float-slow { animation: cw-float 10s ease-in-out infinite; }
+@keyframes cw-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+/* neon text glows */
+.cw-neon-magenta { color: #ff9af0; text-shadow: 0 0 8px rgb(225 79 208 / 0.9), 0 0 26px rgb(225 79 208 / 0.5); }
+.cw-neon-cyan { color: #9ff0f7; text-shadow: 0 0 8px rgb(53 216 232 / 0.9), 0 0 26px rgb(53 216 232 / 0.5); }
+.cw-neon-gold { color: #ffd98f; text-shadow: 0 0 8px rgb(232 179 77 / 0.9), 0 0 24px rgb(232 179 77 / 0.5); }
+
+/* big CTA */
+.cw-cta {
+  background: linear-gradient(95deg, var(--cw-magenta), var(--cw-purple-deep));
+  box-shadow:
+    0 0 0 1px rgb(225 79 208 / 0.5),
+    0 0 34px -6px rgb(225 79 208 / 0.7),
+    0 12px 30px -12px rgb(0 0 0 / 0.85);
+  transition: box-shadow 0.25s ease, transform 0.25s ease, filter 0.25s ease;
+}
+.cw-cta:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px rgb(225 79 208 / 0.8), 0 0 50px -4px rgb(225 79 208 / 0.85),
+              0 14px 32px -12px rgb(0 0 0 / 0.85);
+}
+
+/* scrolling cantina ticker */
+.cw-ticker-track {
+  display: flex;
+  width: max-content;
+  animation: cw-ticker 40s linear infinite;
+}
+@keyframes cw-ticker {
+  to { transform: translateX(-50%); }
+}
+
+/* mission route: glowing chip travelling down the dashed line */
+.cw-route-line {
+  background-image: linear-gradient(to bottom, rgb(160 110 242 / 0.6) 55%, transparent 0);
+  background-size: 3px 12px;
+  width: 3px;
+}
+.cw-mission-chip {
+  animation: cw-chip 9s ease-in-out infinite;
+  box-shadow: 0 0 14px 3px rgb(53 216 232 / 0.8);
+}
+@keyframes cw-chip {
+  0% { top: 0%; opacity: 0; }
+  4% { opacity: 1; }
+  15% { top: 13%; } 30% { top: 30%; } 45% { top: 46%; }
+  60% { top: 62%; } 75% { top: 78%; } 92% { top: 97%; opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* cantina text colours — utility classes so components never need inline
+   style={{ color: var(--cw-*) }} (design audit) */
+.cw-ink { color: var(--cw-ink); }
+.cw-mute { color: var(--cw-mute); }
+.cw-faint { color: var(--cw-faint); }
+.cw-cyan-text { color: var(--cw-cyan); }
+
+/* status LED reuse with cantina colors */
+.cw-led-magenta { background: var(--cw-magenta); }
+.cw-led-cyan { background: var(--cw-cyan); }
+.cw-led-gold { background: var(--cw-gold); }
+.cw-led-green { background: #6fe3a1; }
+
+/* bottle chips for the "brains" menu */
+.cw-bottle {
+  position: relative;
+  border-radius: 10px 10px 14px 14px;
+  border: 1px solid var(--cw-line);
+  background: linear-gradient(180deg, rgb(34 24 56 / 0.6), rgb(23 16 41 / 0.9));
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.cw-bottle::before {
+  content: "";
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translateX(-50%);
+  border-radius: 4px 4px 0 0;
+  background: inherit;
+  border: 1px solid var(--cw-line);
+  border-bottom: none;
+}
+.cw-bottle:hover { transform: translateY(-4px); }
+
+/* drink bubbles */
+.cw-bubble {
+  position: absolute;
+  border-radius: 9999px;
+  background: rgb(53 216 232 / 0.7);
+  animation: cw-bubble 4s ease-in infinite;
+  opacity: 0;
+}
+@keyframes cw-bubble {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  15% { opacity: 0.9; }
+  100% { transform: translateY(-46px) scale(1); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .led-pulse, .scanline::after, .drawer-enter,
+  .stars, .stars-far, .dust, .pad-floor::before, .radar-sweep, .radar-blip,
+  .feed-crawl, .neon-sign, .estop, .crew-card, .cta-beacon,
+  .led-blink, .led-blink-slow, .star-twinkle, .holo-flicker, .holo-ring,
+  .radar-sweep-svg, .planet-drift, .ship-drift, .core-pulse, .spark, .neon-svg,
+  .cw-stars, .cw-float, .cw-float-slow, .cw-ticker-track, .cw-mission-chip,
+  .cw-bubble, .cw-portrait, .cw-cta, .cw-bottle {
+    animation: none !important;
+    transition: none !important;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}

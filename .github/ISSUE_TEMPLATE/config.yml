@@ -1,0 +1,3 @@
+# Security reports go to the address in SECURITY.md, never to a public issue.
+# (GitHub surfaces SECURITY.md automatically under the Security tab.)
+blank_issues_enabled: true

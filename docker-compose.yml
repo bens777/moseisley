@@ -1,0 +1,73 @@
+# Moseisley.sh self-hosted deployment (Community Edition).
+# NOTE: postgres user/db keep the historical 'mychief' identifier on purpose —
+# renaming would orphan existing volumes with no user-facing benefit.
+# 1. cp .env.example .env  (fill in APP_SECRET, MASTER_ENCRYPTION_KEY, …)
+# 2. docker compose up -d
+# 3. docker compose exec api alembic upgrade head
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mychief
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — set it in .env}
+      POSTGRES_DB: mychief
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mychief"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://mychief:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — set it in .env}@postgres:5432/mychief
+      STORAGE_LOCAL_PATH: /data/storage
+    volumes:
+      - storage:/data/storage
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: ["python", "-m", "backend.worker.main"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://mychief:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — set it in .env}@postgres:5432/mychief
+      STORAGE_LOCAL_PATH: /data/storage
+      # polling mode needs no public webhook URL — good default for self-hosting
+      TELEGRAM_MODE: ${TELEGRAM_MODE:-polling}
+    volumes:
+      - storage:/data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    environment:
+      # server-side metadata fetches go container-to-container
+      INTERNAL_API_URL: http://api:8000
+    ports:
+      - "127.0.0.1:3100:3000"
+    depends_on:
+      - api
+
+  # Optional dev mail catcher (set EMAIL_PROVIDER=smtp, SMTP_HOST=mailpit, SMTP_PORT=1025)
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: ["dev"]
+    ports:
+      - "8025:8025"
+
+volumes:
+  pgdata:
+  storage:
