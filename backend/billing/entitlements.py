@@ -16,6 +16,13 @@ from backend.billing import stripe_billing
 # Functionality sold only on Pro ($19/mo) in hosted mode. Everything not listed
 # here (orchestrator, chat, goals, memory, providers, ledger, emergency stop, …)
 # is included in Basic.
+# Crew roles that are sold as Pro capabilities. Anything that assigns a role —
+# the agent wizard, a skill — gates on the same entry the role's own routes use.
+ROLE_FEATURES: dict[str, str] = {
+    "strategist": "strategist", "challenger": "challenger", "xray": "xray",
+    "auditor": "auditor", "radar": "market_radar",
+}
+
 PRO_FEATURES = frozenset({
     "telegram",
     "xray",

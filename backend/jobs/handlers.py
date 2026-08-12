@@ -109,6 +109,18 @@ async def instruction_run_job(db: AsyncSession, job: ScheduledJob) -> dict:
         return {"skipped": str(e)}
 
 
+@handler("challenge_run")
+async def challenge_run_job(db: AsyncSession, job: ScheduledJob) -> dict:
+    """The Darvas Challenge daily run — PLATFORM-LEVEL, not per user.
+
+    No user, no entitlement check and no kill switch: this is the public demo
+    portfolio, it trades fictional money, and it calls no language model. It
+    pauses itself when the market-data feed is unavailable."""
+    from backend.challenge.engine import run_challenge
+
+    return await run_challenge(db)
+
+
 @handler("weekly_review")
 async def weekly_review_job(db: AsyncSession, job: ScheduledJob) -> dict:
     user = await _user(db, job)

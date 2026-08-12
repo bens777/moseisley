@@ -16,7 +16,7 @@ const TIERS = [
       "Full product on your own machine",
     ],
     priceNote: "No credit card required",
-    cta: { label: "View on GitHub", href: "https://github.com", external: true },
+    cta: { label: "View on GitHub", href: "https://github.com/bens777/moseisley", external: true },
     ctaNote: "",
     highlight: false,
   },
@@ -41,7 +41,7 @@ const TIERS = [
       "Emergency Stop",
     ],
     priceNote: "",
-    cta: { label: "Start free trial", href: "/login", external: false },
+    cta: { label: "Start free trial", href: "/register", external: false },
     ctaNote: "14 days free · then $9/month",
     highlight: false,
   },
@@ -67,7 +67,7 @@ const TIERS = [
       "Full Personal OS functionality",
     ],
     priceNote: "",
-    cta: { label: "Start free trial", href: "/login", external: false },
+    cta: { label: "Start free trial", href: "/register", external: false },
     ctaNote: "14 days free · then $19/month",
     highlight: true,
   },
@@ -146,7 +146,7 @@ export default function PricingPage() {
                     : "Built-in AI is included with a fair-use daily limit. Prefer your own keys? That usage is billed by your provider."}
                 </p>
                 {t.cta.external ? (
-                  <a href={t.cta.href}
+                  <a href={t.cta.href} target="_blank" rel="noopener noreferrer"
                      className="mt-4 block rounded-full border border-[var(--cw-line)] px-4 py-2.5 text-center text-sm font-bold text-[var(--cw-ink)] hover:border-[var(--cw-purple)]">
                     {t.cta.label}
                   </a>

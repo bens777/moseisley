@@ -16,8 +16,10 @@ from backend.core.models import (
     XRayFinding,
 )
 from backend.core.security import DB, CurrentUser
+from backend.jobs import user_schedule
 from backend.jobs.scheduler import ensure_default_schedules
 from backend.strategy.strategist import run_daily_strategist
+from backend.xray.provenance import synthetic_run_ids
 
 router = APIRouter()
 
@@ -44,7 +46,8 @@ def _goal_trajectory(goals: list[Goal]) -> str:
 
 @router.get("/today")
 async def today(user: CurrentUser, db: DB):
-    await ensure_default_schedules(db, user.id, user.timezone)
+    await ensure_default_schedules(db, user.id, user.timezone,
+                                   disabled=set(user_schedule.disabled_types(user)))
     month_ago = datetime.now(UTC) - timedelta(days=30)
 
     goals = list((await db.execute(
@@ -53,9 +56,13 @@ async def today(user: CurrentUser, db: DB):
 
     plan = await killswitch.get_setting(db, user.id, "latest_strategist_plan")
 
-    findings = list((await db.execute(
-        select(XRayFinding).where(XRayFinding.user_id == user.id, XRayFinding.created_at >= month_ago)
-    )).scalars())
+    # findings derived from the retired demo dataset stop counting immediately,
+    # whether or not the user has cleared the connection yet
+    synthetic_runs = await synthetic_run_ids(db, user.id)
+    findings = [f for f in (await db.execute(
+        select(XRayFinding).where(XRayFinding.user_id == user.id,
+                                  XRayFinding.created_at >= month_ago)
+    )).scalars() if f.run_id not in synthetic_runs]
     verified_money = sum(f.estimated_value_cents or 0 for f in findings
                          if f.type == "found_money" and f.verified)
     estimated_opportunity = sum(f.estimated_value_cents or 0 for f in findings

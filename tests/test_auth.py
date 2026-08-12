@@ -36,15 +36,22 @@ async def test_short_password_rejected(client):
     assert resp.status_code == 400
 
 
-async def test_verification_email_sent_and_verify(client):
-    await client.post("/api/auth/register",
-                      json={"email": "verify@example.com", "password": TEST_PASSWORD})
-    mails = [m for m in MemoryEmailProvider.sent if m["to"] == "verify@example.com"]
-    assert mails and "Verify" in mails[0]["subject"]
-    token = mails[0]["body"].strip().split("\n")[-1]
-    resp = await client.post("/api/auth/verify", json={"token": token})
-    assert resp.status_code == 200
-    assert resp.json()["is_verified"] is True
+async def test_registration_sends_no_email_and_works_immediately(client):
+    """Password reset is the only email the platform sends. Registration sends
+    nothing, and the account is usable straight away (no verification gate)."""
+    MemoryEmailProvider.sent.clear()
+    resp = await client.post("/api/auth/register",
+                             json={"email": "verify@example.com", "password": TEST_PASSWORD})
+    assert resp.status_code == 201
+    assert [m for m in MemoryEmailProvider.sent if m["to"] == "verify@example.com"] == []
+
+    # unverified account authenticates and reaches protected routes
+    login = await client.post("/api/auth/login",
+                              data={"username": "verify@example.com", "password": TEST_PASSWORD})
+    assert login.status_code == 200
+    me = await client.get("/api/me",
+                          headers={"Authorization": f"Bearer {login.json()['access_token']}"})
+    assert me.status_code == 200 and me.json()["is_verified"] is False
 
 
 def _reset_token_from_mail(mail: dict) -> str:
@@ -62,11 +69,11 @@ async def test_forgot_and_reset_password(client):
     resp = await client.post("/api/auth/forgot-password", json={"email": "fp@example.com"})
     assert resp.status_code == 202
     mails = [m for m in MemoryEmailProvider.sent
-             if m["to"] == "fp@example.com" and m["subject"] == "Reset your moseisley.sh password"]
+             if m["to"] == "fp@example.com" and m["subject"] == "Your Moseisley reset link 🛸"]
     assert mails
     # email carries a link (text + html button), never a password
     assert "/reset-password?token=" in mails[-1]["body"]
-    assert mails[-1]["html"] and "Reset password" in mails[-1]["html"]
+    assert mails[-1]["html"] and "Choose a new password" in mails[-1]["html"]
     assert TEST_PASSWORD not in mails[-1]["body"]
     token = _reset_token_from_mail(mails[-1])
     resp = await client.post("/api/auth/reset-password",
@@ -87,7 +94,7 @@ async def test_reset_token_single_use_and_invalidates_others(client):
     await client.post("/api/auth/forgot-password", json={"email": "su@example.com"})
     await client.post("/api/auth/forgot-password", json={"email": "su@example.com"})
     mails = [m for m in MemoryEmailProvider.sent
-             if m["to"] == "su@example.com" and "Reset" in m["subject"]]
+             if m["to"] == "su@example.com" and "reset link" in m["subject"]]
     first, second = _reset_token_from_mail(mails[-2]), _reset_token_from_mail(mails[-1])
     resp = await client.post("/api/auth/reset-password",
                              json={"token": second, "password": "after-reset-password-1"})

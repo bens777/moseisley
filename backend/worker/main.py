@@ -40,6 +40,12 @@ async def main() -> None:
     settings = get_settings()
     worker_id = f"{socket.gethostname()}-{os.getpid()}"
     stop_event = asyncio.Event()
+    try:
+        async with get_sessionmaker()() as db:
+            await scheduler.ensure_platform_schedules(db)
+            await db.commit()
+    except Exception:  # noqa: BLE001 — a missing platform job must not stop the worker
+        logger.exception("could not ensure platform schedules")
     tasks = [asyncio.create_task(job_loop(worker_id, stop_event))]
     if settings.telegram_mode == "polling" and settings.telegram_bot_token:
         from backend.telegram.polling import run_polling_loop

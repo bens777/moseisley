@@ -1,8 +1,11 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
+import { AgentWizard } from "@/components/agent-wizard";
 import { ActiveInstructions } from "@/components/instructions";
+import { RuntimeReference, type Runtime as RuntimeProfile } from "@/components/runtimes";
 import {
   Button, Card, ErrorBox, Input, Insignia, Loading, Pill, SectionHeader, SectionLabel,
 } from "@/components/ui";
@@ -18,6 +21,7 @@ type CrewMember = {
 type CrewState = { orchestrator: { provider?: string; model?: string }; crew: CrewMember[] };
 type Runtime = {
   id: string; adapter_type: string; display_name: string; is_active: boolean;
+  configuration?: { avatar?: string; role?: string };
   health_status: string; has_credentials: boolean;
 };
 
@@ -348,10 +352,12 @@ function ModelPolicyEditor({ member, onClose }: { member: CrewMember; onClose: (
 export default function CrewPage() {
   const crew = useApi<CrewState>("/crew");
   const runtimes = useApi<Runtime[]>("/agents");
+  const catalog = useApi<{ runtimes: RuntimeProfile[] }>("/agents/runtimes");
   const overview = useApi<Overview>("/metrics/overview");
   const usage = useApi<UsageBreakdown>("/metrics/usage", { window: "week" });
   const [editPrompt, setEditPrompt] = useState<string | null>(null);
   const [editModel, setEditModel] = useState<CrewMember | null>(null);
+  const [creating, setCreating] = useState(false);
 
   if (crew.loading || runtimes.loading) return <Loading />;
   if (crew.error) return <ErrorBox message={crew.error} />
@@ -432,7 +438,13 @@ export default function CrewPage() {
           {(runtimes.data || []).map((a) => (
             <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
               <div className="flex min-w-0 items-center gap-2">
-                <Insignia kind={a.adapter_type} size="sm" />
+                {a.configuration?.avatar ? (
+                  <img src={`/brand/${a.configuration.avatar}`} alt="" width={28} height={28}
+                       loading="lazy"
+                       className="h-7 w-7 shrink-0 rounded-full border border-brand/40 object-cover" />
+                ) : (
+                  <Insignia kind={a.adapter_type} size="sm" />
+                )}
                 <span className="truncate font-medium">{a.display_name}</span>
                 <span className="font-mono text-[10px] text-ink-faint">({a.adapter_type})</span>
               </div>
@@ -448,7 +460,29 @@ export default function CrewPage() {
               </div>
             </div>
           ))}
+          <a href="/welcome?rerun=1"
+             className="flex w-full min-h-[52px] items-center justify-center gap-2 rounded-md border border-dashed border-brand/40 text-sm text-brand transition hover:bg-brand/10">
+            <span aria-hidden>✦</span>
+            <span className="font-mono text-[11px] font-bold uppercase tracking-widest">redesign my crew →</span>
+          </a>
+          <button onClick={() => setCreating(true)}
+                  className="flex w-full min-h-[52px] items-center justify-center gap-2 rounded-md border border-dashed border-line-strong text-sm text-ink-mute transition hover:border-brand/60 hover:bg-panel hover:text-ink">
+            <span aria-hidden className="font-mono text-brand">+</span>
+            <span className="font-mono text-[11px] font-bold uppercase tracking-widest">create agent</span>
+          </button>
         </div>
+      </Card>
+
+      {/* read-only reference: compare the runtimes before creating anything */}
+      <Card title="Runtime catalog — what each one is honestly good and bad at">
+        <p className="mb-3 text-xs text-ink-faint">
+          The same profiles the create-agent wizard shows. Written against what the
+          adapters actually do in this build — a runtime listed as blocked is refused
+          by the API too, not merely hidden here.
+        </p>
+        {catalog.loading ? <Loading />
+          : catalog.error ? <ErrorBox message={catalog.error} />
+          : <RuntimeReference runtimes={catalog.data?.runtimes || []} />}
       </Card>
 
       {editPrompt && <PromptEditor role={editPrompt} onClose={() => { setEditPrompt(null); crew.reload(); }} />}

@@ -7,6 +7,7 @@ from sqlalchemy import select
 from backend.billing import entitlements
 from backend.core.models import XRayFinding, XRayRun
 from backend.core.security import DB, CurrentUser
+from backend.xray import provenance
 from backend.xray.engine import run_xray
 
 router = APIRouter(prefix="/xray")
@@ -51,15 +52,17 @@ async def list_runs(user: CurrentUser, db: DB):
     rows = (await db.execute(
         select(XRayRun).where(XRayRun.user_id == user.id).order_by(XRayRun.created_at.desc()).limit(20)
     )).scalars()
-    return [_serialize_run(r) for r in rows]
+    # runs built from the retired demo dataset are excluded everywhere, always
+    return [_serialize_run(r) for r in rows if not provenance.is_synthetic_run(r)]
 
 
 @router.get("/latest")
 async def latest(user: CurrentUser, db: DB):
-    run = (await db.execute(
+    synthetic = await provenance.synthetic_run_ids(db, user.id)
+    run = next((r for r in (await db.execute(
         select(XRayRun).where(XRayRun.user_id == user.id, XRayRun.status == "completed")
-        .order_by(XRayRun.created_at.desc()).limit(1)
-    )).scalars().first()
+        .order_by(XRayRun.created_at.desc()).limit(20)
+    )).scalars() if r.id not in synthetic), None)
     if run is None:
         return {"run": None, "findings": {}, "no_verified_money_message": None}
     rows = (await db.execute(

@@ -10,6 +10,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.agents import inspection
 from backend.agents.native import chat as native_chat
 from backend.core.crypto import decrypt_secret
 from backend.core.models import AgentConfig, AgentSession, ChatMessage, User
@@ -62,10 +63,27 @@ class AgentAdapter:
             agent.health_status = "error"
             reply = await native_chat.reply(db, user, session, text, channel=channel)
             return reply
+
+        # The reply crossed a trust boundary. Screen it BEFORE it is stored: this
+        # session's history is what the tool-using native orchestrator reads next.
+        outcome = await inspection.inspect(db, user, agent, reply)
+        if not outcome.released:
+            outcome.record.session_id = session.id   # where an approval would land it
+            stored = inspection.notice_for(outcome, agent.display_name)
+            db.add(ChatMessage(
+                user_id=user.id, session_id=session.id, role="assistant",
+                content=stored, channel=channel, agent_id=agent.id,
+                metadata_json={"inspection_id": outcome.record.id,
+                               "verdict": outcome.verdict, "withheld": True}))
+            await db.flush()
+            return stored
+
         db.add(ChatMessage(user_id=user.id, session_id=session.id, role="assistant",
-                           content=reply, channel=channel, agent_id=agent.id))
+                           content=outcome.text, channel=channel, agent_id=agent.id,
+                           metadata_json={"inspection_id": outcome.record.id,
+                                          "verdict": outcome.verdict}))
         await db.flush()
-        return reply
+        return outcome.text
 
 
 ADAPTER_TYPES: dict[str, type[AgentAdapter]] = {}

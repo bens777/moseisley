@@ -63,6 +63,19 @@ async def upsert_doc(body: UpsertRequest, user: CurrentUser, db: DB):
     return _serialize(doc)
 
 
+@router.delete("/{document_id}")
+async def delete_doc(document_id: str, user: CurrentUser, db: DB):
+    try:
+        doc = await documents.delete_document(db, user.id, document_id)
+    except documents.DocumentError as e:
+        raise HTTPException(404 if "not found" in str(e) else 400, str(e)) from e
+    await ledger.record(db, user.id, "document_updated", actor_type="user",
+                        entity_type="document", entity_id=document_id,
+                        payload={"path": doc.path, "deleted": True})
+    await db.commit()
+    return {"deleted": True, "path": doc.path}
+
+
 @router.get("/by-path")
 async def get_doc(user: CurrentUser, db: DB, path: str):
     doc = await documents.get_document(db, user.id, path)

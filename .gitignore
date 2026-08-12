@@ -27,7 +27,8 @@ tmp/
 
 # build & runtime artifacts
 .next/
-data/
+/data/
+!apps/web/app/data/
 *.log
 logs/
 .claude/

@@ -5,10 +5,15 @@ Users can export everything at any time — no lock-in.
 """
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.models import Document
+from backend.core.models import Document, DocumentChunk
+
+# Knowledge the user pastes or uploads lives under this prefix; the structural
+# context documents keep their own fixed paths below.
+KNOWLEDGE_PREFIX = "/knowledge/"
 
 CONSTITUTION_PATH = "/context/constitution.md"
 IDEAL_STATE_PATH = "/context/ideal-state.md"
@@ -38,6 +43,10 @@ DEFAULT_DOCS: dict[str, str] = {
 
 # L0: the Constitution can never be modified through AI/system actors (§10).
 AI_IMMUTABLE_PATHS = {CONSTITUTION_PATH}
+
+
+class DocumentError(ValueError):
+    pass
 
 
 async def get_document(db: AsyncSession, user_id: str, path: str) -> Document | None:
@@ -73,11 +82,38 @@ async def upsert_document(
     return doc
 
 
+async def delete_document(db: AsyncSession, user_id: str, document_id: str) -> Document:
+    """Remove a user-added document. The structural context docs are not
+    deletable — they are the shape of the workspace, not content in it."""
+    doc = (await db.execute(select(Document).where(
+        Document.id == document_id, Document.user_id == user_id))).scalar_one_or_none()
+    if doc is None:
+        raise DocumentError("document not found")
+    if doc.path in DEFAULT_DOCS:
+        raise DocumentError(f"{doc.path} is a built-in context document — edit it instead")
+    await db.execute(sa_delete(DocumentChunk).where(
+        DocumentChunk.user_id == user_id, DocumentChunk.document_id == doc.id))
+    await db.delete(doc)
+    await db.flush()
+    return doc
+
+
 async def list_documents(db: AsyncSession, user_id: str, prefix: str | None = None) -> list[Document]:
     q = select(Document).where(Document.user_id == user_id)
     if prefix:
         q = q.where(Document.path.like(f"{prefix}%"))
     return list((await db.execute(q.order_by(Document.path))).scalars())
+
+
+async def search(db: AsyncSession, user_id: str, query: str, limit: int = 5) -> list[Document]:
+    """Text match over the user's documents — the same ILIKE retrieval /search uses."""
+    pattern = f"%{query.strip()}%"
+    return list((await db.execute(
+        select(Document).where(
+            Document.user_id == user_id,
+            or_(Document.path.ilike(pattern), Document.content_md.ilike(pattern)),
+        ).order_by(Document.path).limit(limit)
+    )).scalars())
 
 
 async def export_all(db: AsyncSession, user_id: str) -> list[dict]:

@@ -120,7 +120,10 @@ export function Button({
   );
 }
 
-export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+/* React 19 passes `ref` straight through to function components, so the
+   composer can focus this and put the caret after a voice transcript. */
+export function Input(props: React.InputHTMLAttributes<HTMLInputElement>
+                             & { ref?: React.Ref<HTMLInputElement> }) {
   return (
     <input
       {...props}

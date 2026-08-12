@@ -63,38 +63,26 @@ def _reset_email(token: str) -> tuple[str, str, str]:
     and invalidates all other outstanding reset tokens), and expires after 60 minutes.
     Never log it.
     """
+    from backend.email.templates import reset_password_email
+
     origin = get_settings().frontend_origin.rstrip("/")
     link = f"{origin}/reset-password?token={token}"
-    subject = "Reset your moseisley.sh password"
-    text = (
-        "We received a request to reset your password.\n"
-        "Open the link below to choose a new password.\n"
-        "This link expires in 60 minutes.\n"
-        "If you didn't request this, you can ignore this email.\n\n"
-        f"{link}\n"
-    )
-    html = f"""\
-<div style="background:#0b0a08;padding:32px;font-family:ui-monospace,Menlo,monospace;color:#ede6da">
-  <p style="font-size:16px;font-weight:bold;margin:0 0 16px">
-    <span style="color:#e8a33d">&#9656;</span> moseisley<span style="color:#e8a33d">.sh</span>
-  </p>
-  <p style="font-size:14px;line-height:1.6;color:#ede6da;margin:0 0 8px">
-    We received a request to reset your password.<br>
-    Click the button below to choose a new password.<br>
-    This link expires in 60 minutes.<br>
-    If you didn't request this, you can ignore this email.
-  </p>
-  <p style="margin:24px 0">
-    <a href="{link}" style="background:#e8a33d;color:#0b0a08;text-decoration:none;
-       padding:12px 24px;border-radius:6px;font-weight:bold;font-size:14px">
-      Reset password
-    </a>
-  </p>
-  <p style="font-size:12px;color:#6b6359;word-break:break-all">
-    Or copy this link: {link}
-  </p>
-</div>"""
-    return subject, text, html
+    return reset_password_email(link, RESET_TOKEN_LIFETIME_SECONDS // 60)
+
+
+async def _deliver(user_email: str, subject: str, text: str, html: str | None = None) -> None:
+    """Send an email without blocking the caller when a real mail server is
+    involved. Registration used to await two SMTP round-trips inline (~84s with
+    an unreachable server); SMTP now goes to a background task while the
+    console/memory providers stay synchronous so tests remain deterministic."""
+    from backend.core.email import SMTPEmailProvider
+    from backend.email.sender import spawn_send
+
+    provider = get_email_provider()
+    if isinstance(provider, SMTPEmailProvider):
+        spawn_send(provider.send(user_email, subject, text, html=html))
+        return
+    await provider.send(user_email, subject, text, html=html)
 
 
 class UserManager(BaseUserManager[User, str]):
@@ -127,23 +115,13 @@ class UserManager(BaseUserManager[User, str]):
             await ensure_default_agents(self.user_db.session, user.id)
         except Exception:
             logger.warning("default agent creation deferred to first use")
-        try:
-            await self.request_verify(user, request)
-        except Exception:
-            pass  # verification email is best-effort at registration time
-
-    async def on_after_request_verify(self, user: User, token: str,
-                                      request: Request | None = None) -> None:
-        await get_email_provider().send(
-            user.email, "Verify your Moseisley.sh account",
-            "Confirm your email address by submitting this token to /api/auth/verify "
-            f"(the dashboard does this for you):\n\n{token}\n",
-        )
+        # No email is sent at registration: accounts are usable immediately.
+        # Password reset is the ONLY email this platform sends.
 
     async def on_after_forgot_password(self, user: User, token: str,
                                        request: Request | None = None) -> None:
         subject, text, html = _reset_email(token)
-        await get_email_provider().send(user.email, subject, text, html=html)
+        await _deliver(user.email, subject, text, html)
 
 
 async def get_user_manager(user_db=Depends(get_user_db)) -> AsyncIterator[UserManager]:

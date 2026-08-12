@@ -61,6 +61,8 @@ async def test_strategist_deterministic_fallback_uses_findings(client, auth):
 async def test_today_aggregation(client, auth):
     await create_demo_connection(client, auth)
     await client.post("/api/xray/run", json={"horizon_days": 90}, headers=auth)
+    from tests.test_xray import treat_last_run_as_real
+    await treat_last_run_as_real(client, auth)
     await setup_mock_provider(client, auth, {"open_findings": PLAN_JSON})
     await client.post("/api/strategist/run", headers=auth)
     today = (await client.get("/api/today", headers=auth)).json()

@@ -11,12 +11,25 @@ from tests.conftest import auth_headers
 
 
 async def create_demo_connection(client, headers, capabilities=None):
-    resp = await client.post("/api/integrations", json={
-        "integration_type": "demo", "name": "Demo Google",
-        "capabilities": capabilities or {"gmail.read": "READ", "calendar.read": "READ"},
-    }, headers=headers)
-    assert resp.status_code == 200, resp.text
-    return resp.json()
+    """Gmail-shaped fixture data for the pipeline tests.
+
+    The product no longer offers demo data and POST /integrations refuses to
+    create it, so this seeds the row directly. The synthetic adapter still reads
+    inside the test environment only — see broker.SYNTHETIC_TYPES.
+    """
+    from backend.core.db import get_sessionmaker
+    from backend.core.models import IntegrationConnection
+
+    me = (await client.get("/api/me", headers=headers)).json()
+    async with get_sessionmaker()() as db:
+        conn = IntegrationConnection(
+            user_id=me["id"], integration_type="demo", name="Demo Google",
+            capabilities_json=capabilities or {"gmail.read": "READ",
+                                               "calendar.read": "READ"})
+        db.add(conn)
+        await db.commit()
+        return {"id": conn.id, "integration_type": conn.integration_type,
+                "name": conn.name, "capabilities": conn.capabilities_json}
 
 
 async def test_demo_gmail_read_through_broker(client, auth, db_session):

@@ -37,7 +37,14 @@ EVENT_TYPES = {
     "market_report_created", "market_brief_delivered",
     "dev_proposal_created", "dev_patch_ready", "dev_proposal_approved",
     "dev_proposal_rejected", "dev_proposal_merged",
-    "manager_draft_created", "manager_draft_saved",
+    "manager_draft_created", "manager_draft_saved", "manager_nudge_sent",
+    # external agent replies: screening decisions and the user's resolution
+    "agent_reply_quarantined", "agent_reply_blocked",
+    "agent_reply_released", "agent_reply_discarded",
+    "skill_enabled", "skill_disabled",
+    # trader assistant: inbound signals from the user's own TradingView alerts
+    "trading_webhook_issued", "trading_webhook_revoked",
+    "trading_signal_received",
 }
 
 

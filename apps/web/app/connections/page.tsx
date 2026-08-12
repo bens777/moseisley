@@ -182,16 +182,6 @@ export default function ConnectionsPage() {
     setModelCounts((c) => ({ ...c, [provider]: result.count }));
   }
 
-  async function addDemo() {
-    await api("/integrations", {
-      body: {
-        integration_type: "demo", name: "Demo data (synthetic)",
-        capabilities: { "gmail.read": "READ", "calendar.read": "READ" },
-      },
-    });
-    connections.reload();
-  }
-
   const configured = new Map((providers.data || []).map((p) => [p.provider, p]));
   // hosted trial: own keys are a subscriber feature (server-enforced too)
   const byokLocked = settings.data?.byok_allowed === false;
@@ -299,12 +289,12 @@ export default function ConnectionsPage() {
         )}
       </Card>
 
-      <Card title="Integrations" action={<Button variant="ghost" onClick={addDemo}>Add demo data</Button>}>
+      <Card title="Integrations">
         {!connections.data?.length ? (
           <p className="text-sm text-ink-faint">
             Nothing connected. Connect Google (OAuth setup — see README), MCP servers,
-            webhooks, n8n or your own S3-compatible storage — or add synthetic demo data
-            to try X-Ray immediately.
+            webhooks, n8n or your own S3-compatible storage. There is no sample data:
+            your crew reads what you connect and nothing else.
           </p>
         ) : (
           <div className="space-y-2">

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from backend.core.crypto import encrypt_secret
 from backend.core.models import IntegrationConnection, XRayFinding, XRayRun
@@ -48,12 +48,13 @@ async def list_connections(user: CurrentUser, db: DB):
 async def create_connection(body: CreateConnectionRequest, user: CurrentUser, db: DB):
     if body.integration_type not in broker.ADAPTERS:
         raise HTTPException(400, f"unknown integration type: {body.integration_type}")
-    if body.integration_type == "demo":
-        # demo data is a singleton per user — repeated clicks must not duplicate it
-        existing = next((c for c in await broker.list_connections(db, user.id)
-                         if c.integration_type == "demo"), None)
-        if existing is not None:
-            return _serialize(existing)
+    if body.integration_type in broker.SYNTHETIC_TYPES:
+        # The product carries no fictional data. Features are explained, never
+        # simulated, so there is nothing to seed here any more.
+        raise HTTPException(
+            410, "Demo data has been removed from Moseisley. Nothing in the product is "
+                 "simulated any more — connect a real source, or read what each feature "
+                 "looks for before you connect anything.")
     conn = IntegrationConnection(
         user_id=user.id, integration_type=body.integration_type, name=body.name,
         configuration_json=body.configuration, capabilities_json=body.capabilities or {},
@@ -129,6 +130,43 @@ async def disconnect(connection_id: str, user: CurrentUser, db: DB, purge: bool 
                             payload={"scope": "xray", "runs": len(run_ids)})
     await db.commit()
     return {"ok": True, "purged": purge}
+
+
+@router.post("/demo/clear")
+async def clear_demo(user: CurrentUser, db: DB):
+    """Inverse of seeding the demo dataset (POST /integrations {"integration_type":
+    "demo"}): removes the demo connection and only the X-Ray data derived from it.
+
+    Runs record their provenance in summary_json["demo_data"], so a user who
+    connected real accounts keeps every real finding."""
+    conn = next((c for c in await broker.list_connections(db, user.id)
+                 if c.integration_type == "demo"), None)
+    if conn is None:
+        raise HTTPException(404, "no demo data to clear")
+
+    demo_runs = [r for r in (await db.execute(
+        select(XRayRun).where(XRayRun.user_id == user.id)
+    )).scalars() if (r.summary_json or {}).get("demo_data")]
+    run_ids = [r.id for r in demo_runs]
+    findings = 0
+    if run_ids:
+        findings = (await db.execute(
+            select(func.count()).select_from(XRayFinding).where(
+                XRayFinding.user_id == user.id, XRayFinding.run_id.in_(run_ids))
+        )).scalar_one()
+        await db.execute(delete(XRayFinding).where(
+            XRayFinding.user_id == user.id, XRayFinding.run_id.in_(run_ids)))
+        await db.execute(delete(XRayRun).where(
+            XRayRun.user_id == user.id, XRayRun.id.in_(run_ids)))
+
+    await db.delete(conn)
+    await ledger.record(db, user.id, "integration_disconnected", actor_type="user",
+                        entity_type="integration", entity_id=conn.id,
+                        payload={"type": "demo", "purged": True})
+    await ledger.record(db, user.id, "data_purged", actor_type="user",
+                        payload={"scope": "demo", "runs": len(run_ids), "findings": findings})
+    await db.commit()
+    return {"ok": True, "runs_removed": len(run_ids), "findings_removed": findings}
 
 
 class InvokeRequest(BaseModel):

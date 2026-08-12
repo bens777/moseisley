@@ -1,8 +1,7 @@
 """EmailProvider abstraction (architecture update).
 
 Moseisley.sh never depends on a specific SaaS mailer. Implementations:
-- SMTPEmailProvider: any SMTP server (self-hosted mail, Mailpit in dev, or a
-  transactional service's SMTP endpoint if the operator chooses one);
+- SMTPEmailProvider: real delivery via backend.email.sender (SMTP_HOST etc.);
 - ConsoleEmailProvider: logs emails (development default);
 - MemoryEmailProvider: captures emails in memory (tests).
 """
@@ -35,39 +34,12 @@ class MemoryEmailProvider(EmailProvider):
 
 
 class SMTPEmailProvider(EmailProvider):
-    def __init__(self, host: str, port: int, username: str | None, password: str | None,
-                 use_tls: bool, sender: str):
-        self.host, self.port = host, port
-        self.username, self.password = username, password
-        self.use_tls = use_tls
-        self.sender = sender
+    """Thin adapter over backend.email.sender — one SMTP path for the whole app."""
 
     async def send(self, to: str, subject: str, body: str, html: str | None = None) -> bool:
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
+        from backend.email.sender import send_email
 
-        import aiosmtplib
-
-        if html:
-            msg = MIMEMultipart("alternative")
-            msg.attach(MIMEText(body, "plain"))
-            msg.attach(MIMEText(html, "html"))
-        else:
-            msg = MIMEText(body)
-        msg["From"] = self.sender
-        msg["To"] = to
-        msg["Subject"] = subject
-        msg["Reply-To"] = get_settings().support_email
-        try:
-            await aiosmtplib.send(
-                msg, hostname=self.host, port=self.port,
-                username=self.username or None, password=self.password or None,
-                start_tls=self.use_tls,
-            )
-            return True
-        except Exception:
-            logger.exception("smtp send failed")
-            return False
+        return await send_email(to, subject, html or body, text_body=body)
 
 
 _provider: EmailProvider | None = None
@@ -77,14 +49,12 @@ def get_email_provider() -> EmailProvider:
     global _provider
     if _provider is None:
         settings = get_settings()
-        if settings.email_provider == "smtp":
-            _provider = SMTPEmailProvider(
-                settings.smtp_host or "localhost", settings.smtp_port,
-                settings.smtp_username, settings.smtp_password,
-                settings.smtp_use_tls, settings.email_from,
-            )
-        elif settings.email_provider == "memory":
+        # explicit test/dev choices win; otherwise a configured SMTP_HOST is
+        # enough to go live — operators shouldn't have to flip a second switch
+        if settings.email_provider == "memory":
             _provider = MemoryEmailProvider()
+        elif settings.email_provider == "smtp" or settings.smtp_configured():
+            _provider = SMTPEmailProvider()
         else:
             _provider = ConsoleEmailProvider()
     return _provider

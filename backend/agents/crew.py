@@ -40,6 +40,11 @@ MAX_DELEGATIONS_PER_RUN = 3
 MAX_LLM_CALLS_PER_RUN = 8
 
 
+def platform_reference() -> str:
+    """The maintained feature list the Manager answers "how do I…?" from."""
+    return (PROMPTS_DIR / "shared" / "features.md").read_text()
+
+
 def default_prompt(role: str) -> str:
     base = (PROMPTS_DIR / "shared" / "crew_base.md").read_text()
     path = PROMPTS_DIR / f"{role}.md"

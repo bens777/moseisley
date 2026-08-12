@@ -1,8 +1,10 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import { api, euros, hours } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
-import { Button, Card, EmptyState, ErrorBox, Loading, Pill } from "@/components/ui";
+import { DemoBanner } from "@/components/demo-banner";
+import { Button, Card, ErrorBox, Loading, Pill } from "@/components/ui";
 
 type Finding = {
   id: string; type: string; title: string; description: string;
@@ -16,6 +18,65 @@ type Latest = {
   findings: Record<string, Finding[]>;
   no_verified_money_message: string | null;
 };
+
+/* Nothing is simulated to fill this gap. Before there is a report, the page
+   explains exactly what a scan looks for and what it needs — and says plainly
+   whether a source is connected yet. */
+const LOOKS_FOR: [string, string][] = [
+  ["Unpaid and overdue invoices",
+   "Money you are owed that nobody chased — matched against your sent mail, with the thread as evidence."],
+  ["Warm leads that went cold",
+   "People who asked for a price or a proposal and never got an answer."],
+  ["Promises you did not keep",
+   "“I'll send it Friday” — commitments you made in writing that were never closed out."],
+  ["Recoverable hours",
+   "Repetitive admin and fragmented meetings, measured over 90 days rather than guessed at."],
+];
+
+function XRayExplainer({ running, onRun }: { running: boolean; onRun: () => void }) {
+  const connections = useApi<{ id: string; integration_type: string }[]>("/integrations");
+  const connected = (connections.data || []).length > 0;
+
+  return (
+    <Card title="What an X-Ray finds" tone="attention">
+      <p className="text-sm leading-relaxed text-ink-mute">
+        A scan reads your last 90 days of connected activity and reports only what it
+        can evidence. There is no sample report to look at first — the platform
+        contains no invented data, so this is a description, not a preview.
+      </p>
+      <dl className="mt-4 space-y-3">
+        {LOOKS_FOR.map(([title, body]) => (
+          <div key={title} className="flex min-w-0 gap-3">
+            <span aria-hidden className="shrink-0 pt-0.5 font-mono text-xs text-brand">▸</span>
+            <div className="min-w-0">
+              <dt className="text-sm font-medium text-ink">{title}</dt>
+              <dd className="mt-0.5 text-xs leading-relaxed text-ink-mute">{body}</dd>
+            </div>
+          </div>
+        ))}
+      </dl>
+      <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-3">
+        {connected ? (
+          <>
+            <Button disabled={running} onClick={onRun}>
+              {running ? "Analyzing…" : "Analyze my last 90 days"}
+            </Button>
+            <span className="text-xs text-ink-faint">
+              Runs against the sources you have connected.
+            </span>
+          </>
+        ) : (
+          <>
+            <Link href="/connections"><Button>Connect a source</Button></Link>
+            <span className="text-xs text-ink-faint">
+              Nothing is connected yet, so a scan would have nothing to read.
+            </span>
+          </>
+        )}
+      </div>
+    </Card>
+  );
+}
 
 const SECTIONS: [string, string][] = [
   ["found_money", "Found Money"],
@@ -41,7 +102,9 @@ function FindingCard({ f, onUpdate }: { f: Finding; onUpdate: () => void }) {
             {f.verified ? "VERIFIED"
               : (f.estimated_value_cents != null || f.estimated_time_minutes != null) ? "ESTIMATED" : "INFERENCE"}
           </Pill>
-          <span className="text-[10px] text-ink-mute">confidence {(f.confidence * 100).toFixed(0)}%</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-ink-mute">confidence {(f.confidence * 100).toFixed(0)}%</span>
+          </div>
         </div>
       </div>
       <div className="mt-2 flex items-center gap-3 text-xs text-ink-mute">
@@ -99,6 +162,7 @@ export default function XRayPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
+      <DemoBanner />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">X-Ray — Opportunity Scan</h1>
@@ -118,15 +182,7 @@ export default function XRayPage() {
         </div>
       </div>
       {runError && <ErrorBox message={runError} />}
-      {!data?.run && (
-        <EmptyState
-          label="scanner idle"
-          title="No intelligence report yet"
-          body="Connect your data, then let X-Ray analyze your recent history for:"
-          bullets={["unpaid and overdue invoices", "warm leads that went cold", "forgotten commitments", "recoverable hours"]}
-          action={<Button disabled={running} onClick={() => run(90)}>{running ? "Analyzing…" : "Analyze last 90 days"}</Button>}
-        />
-      )}
+      {!data?.run && <XRayExplainer running={running} onRun={() => run(90)} />}
       {data?.run && (
         <>
           <Card title={`Last run — ${data.run.horizon_days} days`}>
@@ -146,7 +202,10 @@ export default function XRayPage() {
             return (
               <Card key={key} title={label}>
                 <div className="space-y-2">
-                  {items.map((f) => <FindingCard key={f.id} f={f} onUpdate={reload} />)}
+                  {items.map((f) => (
+                    <FindingCard key={f.id} f={f} onUpdate={reload}
+ />
+                  ))}
                 </div>
               </Card>
             );

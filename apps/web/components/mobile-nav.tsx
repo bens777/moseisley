@@ -7,8 +7,10 @@ import { useEffect, useRef, useState } from "react";
    only and never appears here. */
 
 const ITEMS = [
-  { href: "/pricing", label: "Pricing" },
-  { href: "/login", label: "Log in" },
+  // the conversion CTA leads, styled as the primary action
+  { href: "/register", label: "Start free trial", primary: true },
+  { href: "/pricing", label: "Pricing", primary: false },
+  { href: "/login", label: "Log in", primary: false },
 ];
 
 export function MobileNav() {
@@ -66,7 +68,9 @@ export function MobileNav() {
               key={item.href}
               href={item.href}
               onClick={() => setOpen(false)}
-              className="cw-mute block rounded-xl px-3 py-2.5 text-sm hover:bg-[var(--cw-raised)] hover:text-[var(--cw-ink)]"
+              className={item.primary
+                ? "cw-cta mb-1 block rounded-xl px-3 py-2.5 text-center text-sm font-bold uppercase tracking-wide text-white"
+                : "cw-mute block rounded-xl px-3 py-2.5 text-sm hover:bg-[var(--cw-raised)] hover:text-[var(--cw-ink)]"}
             >
               {item.label}
             </Link>

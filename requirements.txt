@@ -16,6 +16,10 @@ fastapi-users[sqlalchemy]>=14,<16
 aiosmtplib>=3.0
 boto3>=1.34
 
+# Private per-user EOD equity/ETF data (assistant mode only — never rendered on a
+# public surface, never redistributed). Pulls pandas+numpy: ~192MB installed.
+yfinance>=0.2
+
 # development / testing
 pytest>=8
 pytest-asyncio>=0.23

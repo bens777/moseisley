@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from backend.agents import manager as manager_svc
-from backend.agents import orchestrator
+from backend.agents import nudges, orchestrator
 from backend.core.models import ChatMessage
 from backend.core.security import DB, CurrentUser
 
@@ -29,6 +29,20 @@ async def messages(user: CurrentUser, db: DB, limit: int = 50):
     )).scalars())[::-1]
     return [{"id": m.id, "role": m.role, "content": m.content,
              "created_at": m.created_at} for m in rows]
+
+
+@router.post("/nudge")
+async def nudge(user: CurrentUser, db: DB):
+    """Called when the chat home opens: the Manager speaks first if the user's
+    setup has a hole worth pointing at. At most one, once, ever."""
+    session = await manager_svc.get_session(db, user)
+    message = await nudges.maybe_post(db, user, session)
+    await db.commit()
+    if message is None:
+        return {"posted": False}
+    return {"posted": True,
+            "message": {"id": message.id, "role": message.role,
+                        "content": message.content, "created_at": message.created_at}}
 
 
 @router.post("/message")

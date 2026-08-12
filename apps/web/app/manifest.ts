@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "Moseisley.sh",
     description:
       "Your AI crew, working for you. Give your agents goals, tools and autonomy — Moseisley.sh coordinates the rest.",
-    start_url: "/command",
+    start_url: "/manager",
     display: "standalone",
     background_color: "#0b0a08",
     theme_color: "#0b0a08",

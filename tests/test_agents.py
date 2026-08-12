@@ -32,7 +32,12 @@ async def test_create_activate_switch_preserves_state(client, auth, db_session, 
         "unit": "EUR", "currency": "EUR", "deadline": None, "constraints": {},
         "missing_critical": [],
     })
-    await setup_mock_provider(client, auth, {"7000": goal_json})
+    # the screener runs on every external reply — script a clean verdict so this
+    # test stays about agent switching, not about screening
+    await setup_mock_provider(client, auth, {
+        "7000": goal_json,
+        "REPLY UNDER REVIEW": json.dumps({"risk": "none", "reasons": []}),
+    })
     await client.post("/api/goals/compile", json={"text": "income 7000 monthly"}, headers=auth)
 
     resp = await client.post("/api/agents", json={
@@ -105,6 +110,12 @@ async def test_failed_external_agent_falls_back_to_native(client, auth, db_sessi
 
 
 async def test_openclaw_adapter_payload(client, auth, db_session, monkeypatch):
+    import json as _json
+
+    # external replies are screened before they are stored: give the screener a
+    # provider and a clean verdict, or fail-closed would hold this reply
+    await setup_mock_provider(client, auth, {
+        "REPLY UNDER REVIEW": _json.dumps({"risk": "none", "reasons": []})})
     resp = await client.post("/api/agents", json={
         "adapter_type": "openclaw", "display_name": "OpenClaw",
         "configuration": {"base_url": "http://localhost:18789"},

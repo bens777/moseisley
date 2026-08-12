@@ -156,22 +156,47 @@ def next_local_time(tz_name: str, hour: int, minute: int = 0, *, weekday: int | 
     return candidate.astimezone(UTC)
 
 
-async def ensure_default_schedules(db: AsyncSession, user_id: str, tz_name: str) -> None:
-    """Default always-on schedules (§86). Idempotent per user."""
+CHALLENGE_JOB_KEY = "challenge_run:platform"
+
+
+async def ensure_platform_schedules(db: AsyncSession) -> None:
+    """Jobs that belong to the platform, not to a user. Idempotent.
+
+    The Darvas Challenge runs once a day at 00:20 UTC — after the daily crypto
+    candle has closed, and crypto has no market close to wait for."""
+    await enqueue(
+        db, "challenge_run", user_id=None,
+        run_at=next_local_time("UTC", 0, 20),
+        interval_seconds=86400, cron_hint="daily 00:20 UTC",
+        idempotency_key=CHALLENGE_JOB_KEY,
+    )
+
+
+async def ensure_default_schedules(db: AsyncSession, user_id: str, tz_name: str,
+                                   *, disabled: set[str] | None = None) -> None:
+    """Default always-on schedules (§86). Idempotent per user.
+
+    `disabled` is the set of job types the user switched off on the Schedule
+    page. This runs on every Command Center load, so without it a job the user
+    just disabled would quietly come back."""
+    off = disabled or set()
     defaults = [
         ("market_radar", 6, 0, 86400, "daily 06:00"),
         ("daily_strategist", 8, 0, 86400, "daily 08:00"),
     ]
     for job_type, hour, minute, interval, hint in defaults:
+        if job_type in off:
+            continue
         await enqueue(
             db, job_type, user_id=user_id,
             run_at=next_local_time(tz_name, hour, minute),
             interval_seconds=interval, cron_hint=hint,
             idempotency_key=f"{job_type}:{user_id}",
         )
-    await enqueue(
-        db, "weekly_review", user_id=user_id,
-        run_at=next_local_time(tz_name, 8, 30, weekday=0),
-        interval_seconds=7 * 86400, cron_hint="monday 08:30",
-        idempotency_key=f"weekly_review:{user_id}",
-    )
+    if "weekly_review" not in off:
+        await enqueue(
+            db, "weekly_review", user_id=user_id,
+            run_at=next_local_time(tz_name, 8, 30, weekday=0),
+            interval_seconds=7 * 86400, cron_hint="monday 08:30",
+            idempotency_key=f"weekly_review:{user_id}",
+        )

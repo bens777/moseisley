@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.models import Goal, XRayFinding, XRayRun
+from backend.integrations import broker
 from backend.ledger import service as ledger
 from backend.xray import analyzers, ingest
 
@@ -23,6 +24,11 @@ async def run_xray(db: AsyncSession, user_id: str, horizon_days: int = 90) -> XR
                         payload={"horizon_days": horizon_days})
     try:
         emails, events = await ingest.ingest(db, user_id, horizon_days)
+        # provenance: was this run built from the demo dataset? Recorded in
+        # summary_json (free-form) so the UI can label the findings without a
+        # schema change. Demo is a singleton per user.
+        source_conn = await broker.find_connection_for_capability(db, user_id, "gmail.read")
+        from_demo = source_conn is not None and source_conn.integration_type == "demo"
 
         stated_priority = None
         goal = (await db.execute(
@@ -73,6 +79,7 @@ async def run_xray(db: AsyncSession, user_id: str, horizon_days: int = 90) -> XR
             "estimated_opportunity_cents": estimated_cents,
             "estimated_time_recoverable_minutes": time_minutes,
             "no_verified_money": verified_cents == 0,
+            "demo_data": from_demo,
         }
         await ledger.record(db, user_id, "xray_completed", entity_type="xray_run", entity_id=run.id,
                             payload=run.summary_json)

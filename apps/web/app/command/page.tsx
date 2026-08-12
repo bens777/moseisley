@@ -1,7 +1,11 @@
 "use client";
 import Link from "next/link";
 import { api, euros, hours } from "@/lib/api";
+import { useState } from "react";
 import { useApi } from "@/lib/hooks";
+import { DemoBanner } from "@/components/demo-banner";
+import { ModeCard } from "@/components/mode-card";
+import { openManagerPanel } from "@/components/manager";
 import { FactoryState } from "@/components/factory-toggle";
 import { StoppedBanner } from "@/components/shell";
 import {
@@ -49,14 +53,22 @@ function fmtMoneyMap(m: Money): string {
   return parts.length ? parts.join(" + ") : "€0";
 }
 
-function aiCost(o: Overview["usage_week"]): { value: string; hint: string } {
+/* Where the money for AI actually goes depends on the active mode. */
+const COST_HINT: Record<string, string> = {
+  factory: "included with your pass",
+  dev: "free models via your OpenRouter key",
+  custom: "billed by your providers (BYOK)",
+};
+
+function aiCost(o: Overview["usage_week"], mode: string): { value: string; hint: string } {
   const bits: string[] = [];
   if (o.reported_cost > 0) bits.push(`$${o.reported_cost.toFixed(2)}`);
   if (o.estimated_cost > 0) bits.push(`$${o.estimated_cost.toFixed(2)} est.`);
   const value = bits.length ? bits.join(" + ") : "$0.00";
+  const base = COST_HINT[mode] ?? COST_HINT.custom;
   const hint = o.unknown_cost_requests > 0
-    ? `${o.unknown_cost_requests} req unknown cost · BYOK`
-    : "billed by your providers (BYOK)";
+    ? `${o.unknown_cost_requests} req unknown cost · ${base}`
+    : base;
   return { value, hint };
 }
 
@@ -72,7 +84,7 @@ function InitSequence({ orch, factoryOn, modeLabel, hasGoals, hasConnections, sc
                                    : "platform AI included — zero config", href: "/settings" }
       : { done: !!orch?.configured, label: "Connect your AI", sub: "provider key + orchestrator model", href: "/connections" },
     { done: hasGoals, label: "Define your objective", sub: "tell your crew the mission", href: "/goals" },
-    { done: hasConnections, label: "Connect your world", sub: "email, calendar or demo data", href: "/connections" },
+    { done: hasConnections, label: "Connect your world", sub: "email or calendar — real accounts only", href: "/connections" },
     { done: scanned, label: "Run X-Ray", sub: "analyze your last 90 days", href: "/xray" },
   ];
   const next = steps.find((s) => !s.done);
@@ -102,6 +114,13 @@ function InitSequence({ orch, factoryOn, modeLabel, hasGoals, hasConnections, sc
           Use my own keys instead →
         </Link>
       )}
+      <p className="mt-3 border-t border-line pt-3 text-xs text-ink-mute">
+        Prefer to chat?{" "}
+        <button onClick={() => openManagerPanel("Set everything up for me.")}
+                className="text-brand hover:underline">
+          Ask your Manager to set everything up →
+        </button>
+      </p>
     </Card>
   );
 }
@@ -146,6 +165,7 @@ export default function CommandCenterPage() {
   const usage = useApi<UsageSummary>("/usage/summary");
   const connections = useApi<Connection[]>("/integrations");
   const overview = useApi<Overview>("/metrics/overview");
+  const [showAllMetrics, setShowAllMetrics] = useState(false);
   const projects = useApi<{ id: string; name: string; status: string;
     metrics: { verified_mrr: Money; capital_deployed_cents: number;
                runtime_total_seconds: number } }[]>("/projects");
@@ -176,6 +196,8 @@ export default function CommandCenterPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <StoppedBanner />
+      <ModeCard />
+      <DemoBanner />
       {/* top command bar */}
       <div className="rounded-md border border-line bg-panel/80 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -347,28 +369,71 @@ export default function CommandCenterPage() {
         )}
       </Card>
 
-      {/* REAL operational KPIs (§2, §51) — aggregated from canonical records */}
+      {/* REAL operational KPIs (§2, §51) — aggregated from canonical records.
+          Cards with nothing in them yet are folded away: a new user shouldn't
+          have to read eight zeros to find the one number that matters. */}
       {overview.data && (() => {
         const o = overview.data;
-        const cost = aiCost(o.usage_week);
-        return (
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Card><Stat label="Crew runtime" value={fmtRuntime(o.runtime_week.total_seconds)}
-                        hint={`${o.runtime_week.runs} runs this week · actual execution time`} /></Card>
-            <Card><Stat label="AI tokens" value={fmtTokens(o.usage_week.tokens.total)}
-                        hint="this week · provider-reported" /></Card>
-            <Card><Stat label="AI cost" value={cost.value} hint={cost.hint} /></Card>
-            <Card><Stat label="Treasury"
+        const cost = aiCost(o.usage_week, settings.data?.ai_mode ?? "custom");
+        const moneyEmpty = (m: Money) => Object.values(m).every((c) => !c);
+        const cards: { key: string; empty: boolean; node: React.ReactNode }[] = [
+          { key: "runtime", empty: o.runtime_week.total_seconds === 0,
+            node: <Card><Stat label="Crew runtime" value={fmtRuntime(o.runtime_week.total_seconds)}
+                        hint={`${o.runtime_week.runs} runs this week · actual execution time`} /></Card> },
+          { key: "tokens", empty: o.usage_week.tokens.total === 0,
+            node: <Card><Stat label="AI tokens" value={fmtTokens(o.usage_week.tokens.total)}
+                        hint="this week · provider-reported" /></Card> },
+          { key: "cost", empty: o.usage_week.reported_cost === 0 && o.usage_week.estimated_cost === 0,
+            node: <Card><Stat label="AI cost" value={cost.value} hint={cost.hint} /></Card> },
+          { key: "treasury", empty: !o.treasury.spending_enabled,
+            node: <Card><Stat label="Treasury"
                         value={o.treasury.spending_enabled ? euros(o.treasury.available_cents) : "off"}
-                        hint={o.treasury.spending_enabled ? "available for your crew" : "spending disabled"} /></Card>
-            <Card><Stat label="Capital deployed" value={euros(o.capital_deployed_cents)}
-                        hint="actually spent by crew" /></Card>
-            <Card><Stat label="Verified revenue" value={fmtMoneyMap(o.verified_revenue_month)}
-                        hint="30d · source-backed only" /></Card>
-            <Card><Stat label="Verified MRR" value={fmtMoneyMap(o.verified_mrr)}
-                        hint="recurring, verified ≤35d" /></Card>
-            <Card><Stat label="Pending" value={o.pending_approvals}
-                        hint={`approvals · ${o.active_projects} active project${o.active_projects === 1 ? "" : "s"}`} /></Card>
+                        hint={o.treasury.spending_enabled ? "available for your crew" : "spending disabled"} /></Card> },
+          { key: "capital", empty: o.capital_deployed_cents === 0,
+            node: <Card><Stat label="Capital deployed" value={euros(o.capital_deployed_cents)}
+                        hint="actually spent by crew" /></Card> },
+          { key: "revenue", empty: moneyEmpty(o.verified_revenue_month),
+            node: <Card><Stat label="Verified revenue" value={fmtMoneyMap(o.verified_revenue_month)}
+                        hint="30d · source-backed only" /></Card> },
+          { key: "mrr", empty: moneyEmpty(o.verified_mrr),
+            node: <Card><Stat label="Verified MRR" value={fmtMoneyMap(o.verified_mrr)}
+                        hint="recurring, verified ≤35d" /></Card> },
+          { key: "pending", empty: o.pending_approvals === 0,
+            node: <Card><Stat label="Pending" value={o.pending_approvals}
+                        hint={`approvals · ${o.active_projects} active project${o.active_projects === 1 ? "" : "s"}`} /></Card> },
+        ];
+        const live = cards.filter((c) => !c.empty);
+        const hidden = cards.filter((c) => c.empty);
+        const shown = showAllMetrics ? cards : live;
+        return (
+          <div className="space-y-2">
+            {live.length === 0 && (
+              <div className="rounded-md border border-line bg-panel/50 p-4">
+                <div className="font-mono text-[10px] uppercase tracking-widest text-ink-faint">
+                  no numbers yet
+                </div>
+                <p className="mt-1.5 text-sm leading-relaxed text-ink-mute">
+                  These fill in from what your crew actually does: runtime and tokens once
+                  an agent runs, cost once a provider reports it, revenue only from
+                  source-backed records. Nothing is estimated into these tiles, and nothing
+                  is simulated — an empty number means it has not happened yet.
+                </p>
+              </div>
+            )}
+            {shown.length > 0 && (
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                {shown.map((c) => <div key={c.key}>{c.node}</div>)}
+              </div>
+            )}
+            {hidden.length > 0 && (
+              <button onClick={() => setShowAllMetrics(!showAllMetrics)}
+                      aria-expanded={showAllMetrics}
+                      className="font-mono text-[10px] uppercase tracking-widest text-ink-faint transition hover:text-ink-mute">
+                {showAllMetrics
+                  ? "Hide empty metrics ▾"
+                  : `Show all metrics ▸ (${hidden.length} empty)`}
+              </button>
+            )}
           </div>
         );
       })()}
@@ -420,9 +485,9 @@ export default function CommandCenterPage() {
           {!scanned ? (
             <EmptyState
               label="radar offline"
-              title="No market scan yet"
-              bullets={["competitor moves", "buyer demand signals", "market shifts"]}
-              action={<Link href="/market"><Button>Start first scan</Button></Link>}
+              title="No sweep has run yet"
+              body="A sweep reads public sources for competitor moves, demand signals and market shifts, then reports only when something material changed — nothing is shown here until a real sweep produces a real result."
+              action={<Link href="/market"><Button>Run the first sweep</Button></Link>}
             />
           ) : (
             <div className={`flex items-center justify-between gap-3 rounded-sm border border-line bg-ground/60 p-3 ${d.market_status === "NO MATERIAL CHANGE" ? "" : "scanline"}`}>
@@ -450,8 +515,8 @@ export default function CommandCenterPage() {
             <EmptyState
               label="x-ray"
               title="No verified findings yet"
-              body="Run an X-Ray over your last 90 days to surface unpaid invoices, dropped leads and recoverable time."
-              action={<Link href="/xray"><Button>Run X-Ray</Button></Link>}
+              body="An X-Ray reads your last 90 days of connected activity for unpaid invoices, leads that went cold, promises you did not keep and recoverable hours. Every finding it reports carries its evidence — there are no examples to show you first."
+              action={<Link href="/xray"><Button>See what X-Ray finds</Button></Link>}
             />
           ) : (
             <div className="space-y-2">
@@ -470,6 +535,26 @@ export default function CommandCenterPage() {
           )}
         </Card>
       </div>
+
+      {/* the public demo: one agent, one rulebook, fictional money */}
+      <Link href="/challenge"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-copper/40 bg-copper/5 px-4 py-3 transition hover:border-copper/70 hover:bg-copper/10">
+        <div className="flex min-w-0 items-center gap-3">
+          <Insignia kind="radar" size="sm" />
+          <div className="min-w-0">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-copper">
+              the darvas challenge · public
+            </div>
+            <div className="text-sm text-ink-mute">
+              An agent paper-trades the Darvas box method and publishes every decision.
+              <span className="ml-1 text-ink-faint">Fictional money — a demonstration, not advice.</span>
+            </div>
+          </div>
+        </div>
+        <span className="shrink-0 font-mono text-[11px] uppercase tracking-widest text-copper">
+          watch it →
+        </span>
+      </Link>
 
       {/* treasury strip */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-panel/50 px-4 py-3">

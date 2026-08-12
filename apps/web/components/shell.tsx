@@ -1,91 +1,121 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { api, getToken, setToken } from "@/lib/api";
 import { Wordmark } from "@/components/brand";
-import { ManagerPanel } from "@/components/manager";
+import { ManagerDock } from "@/components/manager";
 import { FactoryToggle, GiftBanner, TrialBanner } from "@/components/factory-toggle";
+import { HOME_PATH } from "@/lib/routes";
 
 type NavItem = { href: string; label: string; glyph: string };
-type NavGroup = { label: string; items: NavItem[] };
 
-const NAV_GROUPS: NavGroup[] = [
-  {
-    label: "command",
-    items: [
-      { href: "/command", label: "Command Center", glyph: "⌂" },
-      { href: "/chat", label: "Chat", glyph: "»" },
-    ],
-  },
-  {
-    label: "intelligence",
-    items: [
-      { href: "/xray", label: "X-Ray", glyph: "⊘" },
-      { href: "/market", label: "Market", glyph: "◎" },
-    ],
-  },
-  {
-    label: "operations",
-    items: [
-      { href: "/goals", label: "Goals", glyph: "◬" },
-      { href: "/projects", label: "Projects", glyph: "▤" },
-      { href: "/agents", label: "Crew", glyph: "⬡" },
-    ],
-  },
-  {
-    label: "resources",
-    items: [
-      { href: "/money", label: "Money", glyph: "▣" },
-      { href: "/connections", label: "Connections", glyph: "#" },
-      { href: "/bar", label: "The Bar", glyph: "🍺" },
-    ],
-  },
-  {
-    label: "system",
-    items: [
-      { href: "/activity", label: "Activity", glyph: "≡" },
-      { href: "/settings", label: "Settings", glyph: "⚙" },
-    ],
-  },
+/* ChatGPT-style: the conversation sits alone at the top — it is home — then the
+   few places you actually visit, and everything technical one click away under
+   ADVANCED. Routes are unchanged; ADVANCED only affects what shows by default. */
+const HOME_NAV: NavItem = { href: HOME_PATH, label: "Manager", glyph: "◬" };
+
+const PRIMARY_NAV: NavItem[] = [
+  { href: "/command", label: "Command Center", glyph: "⌂" },
+  { href: "/agents", label: "Crew", glyph: "⬡" },
+  { href: "/skills", label: "Skills", glyph: "✦" },
+  { href: "/bar", label: "The Bar", glyph: "🍺" },
 ];
 
-const PUBLIC_PATHS = ["/", "/login", "/reset-password", "/legal", "/pricing"];
+const ADVANCED_NAV: NavItem[] = [
+  { href: "/xray", label: "X-Ray", glyph: "⊘" },
+  { href: "/market", label: "Market", glyph: "◎" },
+  { href: "/goals", label: "Goals", glyph: "◬" },
+  { href: "/projects", label: "Projects", glyph: "▤" },
+  { href: "/money", label: "Money", glyph: "▣" },
+  { href: "/schedule", label: "Schedule", glyph: "◷" },
+  { href: "/data", label: "My Data", glyph: "▦" },
+  { href: "/security", label: "Security", glyph: "⛨" },
+  { href: "/trading", label: "Trading", glyph: "↗" },
+  { href: "/connections", label: "Connections", glyph: "#" },
+  { href: "/activity", label: "Activity", glyph: "≡" },
+  { href: "/settings", label: "Settings", glyph: "⚙" },
+];
+
+const ADVANCED_OPEN_KEY = "nav_advanced_open";
+
+const PUBLIC_PATHS = ["/", "/login", "/register", "/reset-password", "/legal", "/pricing",
+                      "/challenge"];
 const PUBLIC_PREFIXES = ["/friends"];
 
+function NavItemLink({ item, active, onNavigate }: {
+  item: NavItem; active: boolean; onNavigate?: () => void;
+}) {
+  return (
+    <Link
+      href={item.href}
+      onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
+      className={`flex min-h-[40px] items-center gap-2.5 rounded-md border-l-2 px-3 py-1.5 text-sm transition ${
+        active
+          ? "border-brand bg-raised font-medium text-ink"
+          : "border-transparent text-ink-mute hover:bg-panel hover:text-ink"
+      }`}
+    >
+      <span aria-hidden className={`w-4 text-center font-mono text-xs ${active ? "text-brand" : "text-ink-faint"}`}>
+        {item.glyph}
+      </span>
+      {item.label}
+    </Link>
+  );
+}
+
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+  // if the user is standing inside an advanced page, never hide it from them
+  const insideAdvanced = ADVANCED_NAV.some((i) => pathname === i.href);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    try { setOpen(localStorage.getItem(ADVANCED_OPEN_KEY) === "1"); } catch { /* private mode */ }
+  }, []);
+
+  function toggle() {
+    setOpen((v) => {
+      const next = !v;
+      try { localStorage.setItem(ADVANCED_OPEN_KEY, next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
+  const expanded = open || insideAdvanced;
+
   return (
     <nav aria-label="Main navigation" className="space-y-4">
-      {NAV_GROUPS.map((group) => (
-        <div key={group.label}>
-          <div className="mb-1 px-3 font-mono text-[9px] uppercase tracking-[0.2em] text-ink-faint">
-            {group.label}
+      {/* home: the Manager conversation itself */}
+      <NavItemLink item={HOME_NAV} active={pathname === HOME_NAV.href} onNavigate={onNavigate} />
+
+      <div className="space-y-0.5 border-t border-line pt-3">
+        {PRIMARY_NAV.map((item) => (
+          <NavItemLink key={item.href} item={item} active={pathname === item.href}
+                       onNavigate={onNavigate} />
+        ))}
+      </div>
+
+      <div className="border-t border-line pt-3">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={expanded}
+          aria-controls="advanced-nav"
+          className="flex w-full min-h-[32px] items-center gap-1.5 px-3 font-mono text-[9px] uppercase tracking-[0.2em] text-ink-faint transition hover:text-ink-mute"
+        >
+          <span aria-hidden>⚙</span> Advanced
+          <span aria-hidden className="ml-auto">{expanded ? "▾" : "▸"}</span>
+        </button>
+        {expanded && (
+          <div id="advanced-nav" className="mt-1 space-y-0.5">
+            {ADVANCED_NAV.map((item) => (
+              <NavItemLink key={item.href} item={item} active={pathname === item.href}
+                           onNavigate={onNavigate} />
+            ))}
           </div>
-          <div className="space-y-0.5">
-            {group.items.map((item) => {
-              const active = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onNavigate}
-                  aria-current={active ? "page" : undefined}
-                  className={`flex min-h-[40px] items-center gap-2.5 rounded-md border-l-2 px-3 py-1.5 text-sm transition ${
-                    active
-                      ? "border-brand bg-raised font-medium text-ink"
-                      : "border-transparent text-ink-mute hover:bg-panel hover:text-ink"
-                  }`}
-                >
-                  <span aria-hidden className={`w-4 text-center font-mono text-xs ${active ? "text-brand" : "text-ink-faint"}`}>
-                    {item.glyph}
-                  </span>
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+        )}
+      </div>
     </nav>
   );
 }
@@ -169,6 +199,46 @@ function EmergencyStop() {
   );
 }
 
+const SUPPORT_URL = "https://discord.gg/MgXM3pt2Fh";
+const SUPPORT_BLURB = "Join the Discord crew and help improve the Cantina!";
+
+function SupportButton({ variant }: { variant: "desktop" | "mobile" }) {
+  const [tip, setTip] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  function enter() {
+    if (variant !== "desktop") return;
+    timer.current = setTimeout(() => setTip(true), 150);   // short delay, no flicker
+  }
+  function leave() {
+    if (timer.current) clearTimeout(timer.current);
+    setTip(false);
+  }
+
+  return (
+    <div className="relative px-1" onMouseEnter={enter} onMouseLeave={leave}>
+      {tip && (
+        <div role="tooltip"
+             className="absolute bottom-full left-1 right-1 mb-2 rounded-md border border-line-strong bg-raised px-2.5 py-1.5 text-xs leading-snug text-ink-mute shadow-lg shadow-black/40">
+          {SUPPORT_BLURB}
+        </div>
+      )}
+      <a href={SUPPORT_URL} target="_blank" rel="noopener noreferrer"
+         title={variant === "desktop" ? SUPPORT_BLURB : undefined}
+         className="flex min-h-[40px] w-full items-center justify-center gap-2 rounded-md border border-brand/50 bg-brand/15 font-mono text-[11px] font-bold uppercase tracking-widest text-brand transition hover:bg-brand/25">
+        🛸 Star Gate Support
+      </a>
+      {variant === "mobile" && (
+        <p className="mt-1.5 px-1 text-center text-[11px] leading-snug text-ink-faint">
+          {SUPPORT_BLURB}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function StoppedBanner() {
   const [engaged, setEngaged] = useState(false);
   useEffect(() => {
@@ -229,6 +299,14 @@ export default function Shell({ children }: { children: ReactNode }) {
 
   const isPublic = PUBLIC_PATHS.includes(pathname)
     || PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  /* Home is the conversation: it owns the viewport — no page padding, no scroll
+     on the frame. */
+  const isHome = pathname === HOME_PATH;
+  /* The Manager bar + drawer exist for pages with no chat surface of their own.
+     Home IS the conversation — Manager and Orchestrator both live there as tabs
+     — so the dock would only overlap it. /chat redirects there and renders
+     nothing, but it is listed so the dock never flashes over the redirect. */
+  const hasOwnChat = isHome || pathname === "/chat";
 
   useEffect(() => {
     if (isPublic) {
@@ -253,10 +331,10 @@ export default function Shell({ children }: { children: ReactNode }) {
   if (!ready) return null;
 
   return (
-    <div className="flex min-h-screen">
+    <div className={`flex ${isHome ? "h-[100dvh] overflow-hidden" : "min-h-screen"}`}>
       {/* desktop sidebar */}
       <aside className="hidden w-60 shrink-0 flex-col overflow-y-auto border-r border-line bg-panel/40 p-4 md:sticky md:top-0 md:flex md:h-screen">
-        <Link href="/command" className="mb-5 block px-1">
+        <Link href={HOME_PATH} className="mb-5 block px-1">
           <Wordmark />
         </Link>
         <NavLinks pathname={pathname} />
@@ -267,17 +345,14 @@ export default function Shell({ children }: { children: ReactNode }) {
           <EmergencyStop />
           <SystemStatus />
           <LogoutButton router={router} />
-          <a href="https://discord.gg/MgXM3pt2Fh" target="_blank" rel="noopener noreferrer"
-             className="block px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-ink-faint transition hover:text-ink-mute">
-            🛸 Star Gate Support
-          </a>
+          <SupportButton variant="desktop" />
         </div>
       </aside>
 
       {/* mobile layout */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-ground/95 px-4 backdrop-blur md:hidden">
-          <Link href="/command"><Wordmark /></Link>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-line bg-ground/95 px-4 backdrop-blur md:hidden">
+          <Link href={HOME_PATH}><Wordmark /></Link>
           <button
             aria-label={drawerOpen ? "Close navigation" : "Open navigation"}
             aria-expanded={drawerOpen}
@@ -322,20 +397,21 @@ export default function Shell({ children }: { children: ReactNode }) {
                 <EmergencyStop />
                 <SystemStatus />
                 <LogoutButton router={router} />
-                <a href="https://discord.gg/MgXM3pt2Fh" target="_blank" rel="noopener noreferrer"
-                   className="block px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-ink-faint transition hover:text-ink-mute">
-                  🛸 Star Gate Support
-                </a>
+                <SupportButton variant="mobile" />
               </div>
             </div>
           </div>
         )}
 
-        <main className="min-w-0 flex-1 p-4 pb-20 md:p-6">{children}</main>
+        <main className={isHome
+          ? "flex min-h-0 min-w-0 flex-1 flex-col"
+          : "min-w-0 flex-1 p-4 pb-20 md:p-6"}>
+          {/* the Manager is the front door: always the first thing on the page —
+              except where the page already has a chat of its own */}
+          {!hasOwnChat && <ManagerDock />}
+          {children}
+        </main>
       </div>
-
-      {/* the Manager is reachable from every authenticated page (§12) */}
-      <ManagerPanel />
     </div>
   );
 }

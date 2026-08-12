@@ -40,10 +40,27 @@ class Settings(BaseSettings):
     email_from: str = "Moseisley.sh <no-reply@localhost>"
     support_email: str = "cantina@moseisley.sh"  # official support/contact address
     smtp_host: str | None = None
-    smtp_port: int = 1025  # Mailpit default for dev
-    smtp_username: str | None = None
+    smtp_port: int = 465                     # implicit SSL (OVH, most providers)
+    smtp_user: str | None = None             # canonical name
+    smtp_username: str | None = None         # deprecated alias for SMTP_USER
     smtp_password: str | None = None
-    smtp_use_tls: bool = False
+    smtp_from: str | None = None             # envelope sender; defaults to email_from
+    smtp_from_name: str = "Moseisley Cantina"
+    smtp_use_tls: bool = False               # STARTTLS; ignored when port == 465
+
+    def smtp_configured(self) -> bool:
+        """SMTP is live as soon as a host is set — no second flag to remember."""
+        return bool(self.smtp_host)
+
+    def smtp_login(self) -> str | None:
+        return self.smtp_user or self.smtp_username or None
+
+    def smtp_sender(self) -> str:
+        """RFC 5322 From: "Moseisley Cantina <cantina@moseisley.sh>"."""
+        addr = self.smtp_from or self.email_from
+        if "<" in addr:                      # already a full mailbox spec
+            return addr
+        return f"{self.smtp_from_name} <{addr}>" if self.smtp_from_name else addr
 
     # Moseisley.sh-owned object storage: local | s3  (S3-compatible protocol, not AWS-specific)
     storage_backend: str = "local"

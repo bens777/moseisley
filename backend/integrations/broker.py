@@ -55,11 +55,31 @@ async def list_connections(db: AsyncSession, user_id: str) -> list[IntegrationCo
     )
 
 
+# Integration types that serve invented data. The product contains zero
+# fictional data, so these are never discovered as a source for analysis — a
+# user who still has one from before gets nothing from it, which is the point.
+# They remain readable inside the test suite (and only there) so the pipeline
+# tests still have a Gmail-shaped fixture to run against.
+SYNTHETIC_TYPES = frozenset({"demo"})
+
+
+def is_synthetic(conn: IntegrationConnection) -> bool:
+    return conn.integration_type in SYNTHETIC_TYPES
+
+
+def _synthetic_allowed() -> bool:
+    from backend.core.config import get_settings
+
+    return get_settings().environment == "test"
+
+
 async def find_connection_for_capability(
     db: AsyncSession, user_id: str, capability: str, connection_id: str | None = None
 ) -> IntegrationConnection | None:
     for conn in await list_connections(db, user_id):
         if conn.status != "connected":
+            continue
+        if is_synthetic(conn) and not _synthetic_allowed():
             continue
         if connection_id and conn.id != connection_id:
             continue

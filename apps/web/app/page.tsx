@@ -157,7 +157,7 @@ export default function LandingPage() {
                 Set the mission. Your AI crew handles the rest.
               </p>
               <div className="mt-7 flex flex-wrap items-center justify-center gap-3 lg:justify-start">
-                <Link href="/login"
+                <Link href="/register"
                       className="cw-cta rounded-full px-7 py-3.5 text-sm font-bold uppercase tracking-wide text-white">
                   Launch your command center
                 </Link>
@@ -467,49 +467,41 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ══ ACTIVE MISSIONS (EXAMPLE) ══ */}
+      {/* ══ WHAT A MISSION MEASURES ══ */}
       <section className="relative border-t border-[var(--cw-line)] py-16 md:py-24">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <h2 className="font-display text-center text-3xl font-bold sm:text-4xl">
             Your projects become <span className="cw-title">missions</span>.
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-center text-[15px] text-[var(--cw-mute)]">
-            Each activity your crew operates gets real, verified numbers — revenue with
-            provenance, capital actually deployed, AI cost, agent runtime. Never estimates
-            dressed up as results.
+            Each activity your crew operates gets real, verified numbers — and only real
+            ones. We do not show you a sample dashboard, because the product does not
+            contain any invented data. Here is what each number actually means.
           </p>
           <div className="mx-auto mt-10 grid max-w-4xl gap-5 sm:grid-cols-2">
             {[
-              { name: "Example SaaS", crew: ["crew-strategist.webp", "crew-radar.webp", "crew-dev.webp"],
-                stats: [["Verified MRR", "€20", "cw-neon-cyan"], ["Capital deployed", "€75", ""], ["AI cost", "$3.42", ""]] },
-              { name: "Consulting funnel", crew: ["crew-followup.webp", "crew-xray.webp"],
-                stats: [["Verified revenue", "€500", "cw-neon-cyan"], ["Leads recovered", "3", ""], ["AI cost", "$1.88", ""]] },
+              { name: "Verified revenue", rule: "Only money with a source behind it",
+                body: "A revenue figure appears when there is a record to point at. Estimates never become results, and nothing is counted twice." },
+              { name: "Capital deployed", rule: "What your crew actually spent",
+                body: "Real outflows against the limits you set. Your crew cannot spend past them, and every intent is logged." },
+              { name: "AI cost", rule: "Reported, estimated or unknown — labelled",
+                body: "When a provider reports the cost we show it. When we can only estimate, we say so. When we cannot know, it says unknown rather than guessing." },
+              { name: "Agent runtime", rule: "Measured execution, not billable hours",
+                body: "How long your specialists actually ran, per role, per week — the honest denominator for everything above." },
             ].map((m) => (
               <div key={m.name} className="cw-panel p-6">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="font-display text-lg font-bold">{m.name}</span>
-                  <span className="rounded-full border border-[var(--cw-gold)]/50 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-[var(--cw-gold)]">example</span>
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--cw-cyan)]">
+                    {m.rule}
+                  </span>
                 </div>
-                <div className="mt-3 flex items-center gap-1.5">
-                  <span className="mr-1 text-[11px] uppercase tracking-widest text-[var(--cw-faint)]">crew:</span>
-                  {m.crew.map((c) => (
-                    <img key={c} src={`/brand/${c}`} alt="" width={34} height={34} loading="lazy"
-                         className="cw-portrait w-8 border-2" />
-                  ))}
-                </div>
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  {m.stats.map(([label, value, cls]) => (
-                    <div key={label}>
-                      <div className="text-[10px] uppercase tracking-widest text-[var(--cw-faint)]">{label}</div>
-                      <div className={`font-display text-lg font-bold ${cls}`}>{value}</div>
-                    </div>
-                  ))}
-                </div>
+                <p className="mt-3 text-sm leading-relaxed text-[var(--cw-mute)]">{m.body}</p>
               </div>
             ))}
           </div>
           <p className="mt-6 text-center text-[11px] text-[var(--cw-faint)]">
-            Demo data shown as an example of the portfolio view — not real user results.
+            No sample data anywhere in Moseisley. Every number you ever see is yours.
           </p>
         </div>
       </section>
@@ -535,17 +527,17 @@ export default function LandingPage() {
               { name: "Community", price: "$0", tag: "self-hosted", per: "free forever",
                 priceNote: "No credit card required",
                 perks: ["Open-source", "Self-hosted", "Full product, your machine", "BYOK · unlimited with your keys"],
-                cta: "Deploy it yourself", ctaNote: "", highlight: false },
+                cta: "Deploy it yourself", ctaNote: "", href: "/pricing", highlight: false },
               { name: "Basic", price: "$9", tag: "hosted", per: "per month",
                 priceNote: "",
                 perks: ["Built-in AI included · 150 AI requests/day", "Or bring your own keys & Ollama", "Hosted cantina", "Command center + chat + goals", "Persistent memory + JSON export", "Model selection + OpenRouter", "Core crew · ledger · emergency stop"],
-                cta: "Start free trial", ctaNote: "14 days free · then $9/month", highlight: false },
+                cta: "Start free trial", ctaNote: "14 days free · then $9/month", href: "/register", highlight: false },
               { name: "Pro", price: "$19", tag: "hosted", per: "per month",
                 priceNote: "",
                 perks: ["Everything in Basic", "Bigger fuel tank · 400 AI requests/day", "Full crew + Telegram", "X-Ray + Strategist + Challenger", "Market radar + experiments", "Scheduled autonomy + Treasury"],
-                cta: "Start free trial", ctaNote: "14 days free · then $19/month", highlight: true },
+                cta: "Start free trial", ctaNote: "14 days free · then $19/month", href: "/register", highlight: true },
             ].map((t) => (
-              <Link key={t.name} href="/pricing"
+              <Link key={t.name} href={t.href}
                     className={`cw-panel block p-6 text-center transition hover:-translate-y-1 ${t.highlight ? "cw-panel-magenta" : ""}`}>
                 <img src="/brand/logo-mark.webp" alt="" width={40} height={40} loading="lazy"
                      className={`mx-auto rounded-full ${t.highlight ? "" : "opacity-60 grayscale-[30%]"}`} />
@@ -587,7 +579,7 @@ export default function LandingPage() {
             Your crew is <span className="cw-title">waiting inside</span>.
           </h2>
           <div className="mt-6">
-            <Link href="/login" className="cw-cta rounded-full px-8 py-4 text-sm font-bold uppercase tracking-wide text-white">
+            <Link href="/register" className="cw-cta rounded-full px-8 py-4 text-sm font-bold uppercase tracking-wide text-white">
               Launch your command center
             </Link>
           </div>

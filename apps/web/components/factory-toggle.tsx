@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 
@@ -109,9 +109,30 @@ const MODE_LED: Record<AiMode, string> = {
 
 export function FactoryToggle({ compact = true }: { compact?: boolean }) {
   const state = useFactoryState();
-  const [picking, setPicking] = useState(false);
+  const [picking, setPicking] = useState(false);   // collapsed by default
   const [busy, setBusy] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  // clicking outside (or ESC) collapses it again — same in the desktop
+  // sidebar and the mobile drawer, both of which render this component
+  useEffect(() => {
+    if (!picking) return;
+    function onPointerDown(e: MouseEvent | TouchEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setPicking(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setPicking(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [picking]);
 
   if (!state || !state.factory.available) return null;
   const active = state.ai_mode;
@@ -143,7 +164,7 @@ export function FactoryToggle({ compact = true }: { compact?: boolean }) {
   }
 
   return (
-    <div className="px-1">
+    <div ref={wrapRef} className="px-1">
       {picking ? (
         <div className="rounded-md border border-crit/50 bg-crit/10 p-2">
           <p className="mb-2 text-center font-mono text-[10px] uppercase tracking-widest text-crit">
@@ -181,10 +202,11 @@ export function FactoryToggle({ compact = true }: { compact?: boolean }) {
         <button
           onClick={() => setPicking(true)}
           className="flex min-h-[40px] w-full items-center justify-center gap-2 rounded-md border border-crit/40 font-mono text-[10px] font-bold uppercase tracking-widest text-ink-mute transition hover:border-crit hover:bg-crit/10"
-          title={MODE_SUBTITLE[active]}
+          title={`${MODE_SUBTITLE[active]} — tap to change`}
+          aria-expanded={picking}
         >
           <span className={`led ${MODE_LED[active]}`} aria-hidden />
-          {MODE_LABEL[active]} mode
+          {MODE_LABEL[active]} · active
         </button>
       )}
       {!compact && (

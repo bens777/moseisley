@@ -314,6 +314,34 @@ class AgentConfig(Base, TimestampMixin):
     health_status: Mapped[str] = mapped_column(String(16), default="unknown")  # ok|error|unknown
 
 
+class AgentInspection(Base):
+    """One screening of one reply from an EXTERNAL agent runtime.
+
+    Quarantined content lives HERE and nowhere else: it is deliberately not a
+    ChatMessage, because chat history is exactly what feeds the next agent turn.
+    Releasing it is a user decision that copies it into the conversation.
+    """
+
+    __tablename__ = "agent_inspections"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    agent_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    agent_name: Mapped[str] = mapped_column(String(120), default="")
+    adapter_type: Mapped[str] = mapped_column(String(32), default="")
+    session_id: Mapped[str | None] = mapped_column(String(36))
+    verdict: Mapped[str] = mapped_column(String(16), index=True)  # none|suspicious|malicious
+    stage: Mapped[str] = mapped_column(String(16), default="deterministic")
+    # deterministic|llm|strict_mode|error
+    reasons_json: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(16), default="passed", index=True)
+    # passed|quarantined|blocked|approved|discarded
+    content: Mapped[str | None] = mapped_column(Text)   # held text; cleared on discard
+    content_chars: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow,
+                                                 index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class AgentSession(Base, TimestampMixin):
     __tablename__ = "agent_sessions"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -621,6 +649,92 @@ class ScheduledJob(Base, TimestampMixin):
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # idempotency: jobs with the same key won't be enqueued twice while one is scheduled/running
     idempotency_key: Mapped[str | None] = mapped_column(String(128), index=True)
+
+
+class TradingWebhook(Base, TimestampMixin):
+    """The per-user inbound endpoint for that user's own TradingView alerts.
+
+    The URL token is `selector.verifier`: the selector is indexed so we can find
+    the row without scanning, and only a SHA-256 of the verifier is stored, so a
+    database leak does not hand anyone a working endpoint. The verifier itself
+    is shown once, at creation.
+    """
+
+    __tablename__ = "trading_webhooks"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    selector: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    verifier_hash: Mapped[str] = mapped_column(String(64))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    signal_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class TradingSignal(Base):
+    """One alert received from the user's own TradingView strategy.
+
+    This is a JOURNAL, not a portfolio: it records what arrived and what the
+    assistant suggested. No order is ever placed, no position is ever held, and
+    no money — real or simulated — moves anywhere in this feature.
+    """
+
+    __tablename__ = "trading_signals"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow,
+                                                  index=True)
+    ticker: Mapped[str] = mapped_column(String(24), index=True)
+    action: Mapped[str] = mapped_column(String(8))            # buy|sell|close
+    price: Mapped[str] = mapped_column(String(32))            # exact decimal as text
+    stop: Mapped[str | None] = mapped_column(String(32))
+    strategy: Mapped[str] = mapped_column(String(64), default="")
+    note: Mapped[str] = mapped_column(String(200), default="")
+    raw_payload: Mapped[dict] = mapped_column(JSON, default=dict)   # sanitized
+    screening: Mapped[dict] = mapped_column(JSON, default=dict)     # verdict + reasons
+    recommendation: Mapped[dict] = mapped_column(JSON, default=dict)
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), index=True)
+
+
+class ChallengeDecision(Base):
+    """One trading decision in the Darvas Challenge — FICTIONAL money only.
+
+    Platform-level (no user_id): there is exactly one public challenge. Every
+    row records WHY, not just what: the box that produced the signal. The
+    public page renders this table verbatim — the transparency is the point.
+    """
+
+    __tablename__ = "challenge_decisions"
+    __table_args__ = (UniqueConstraint("trade_date", "symbol", "action"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    trade_date: Mapped[str] = mapped_column(String(10), index=True)   # ISO date
+    symbol: Mapped[str] = mapped_column(String(16), index=True)
+    action: Mapped[str] = mapped_column(String(8))                    # buy|sell|trail
+    reason: Mapped[str] = mapped_column(Text, default="")
+    price: Mapped[str] = mapped_column(String(32), default="0")       # exact decimal as text
+    units: Mapped[str] = mapped_column(String(32), default="0")
+    box_top: Mapped[str] = mapped_column(String(32), default="0")
+    box_bottom: Mapped[str] = mapped_column(String(32), default="0")
+    stop: Mapped[str] = mapped_column(String(32), default="0")
+    cash_cents_after: Mapped[int] = mapped_column(Integer, default=0)
+    equity_cents_after: Mapped[int] = mapped_column(Integer, default=0)
+    realized_pnl_cents: Mapped[int | None] = mapped_column(Integer)   # sells only
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ChallengeSnapshot(Base):
+    """End-of-day mark of the fictional portfolio. One row per date — this is
+    the equity curve, and the record of any day the data feed was down."""
+
+    __tablename__ = "challenge_snapshots"
+    __table_args__ = (UniqueConstraint("trade_date"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    trade_date: Mapped[str] = mapped_column(String(10), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="running")  # running|paused
+    equity_cents: Mapped[int] = mapped_column(Integer, default=0)
+    cash_cents: Mapped[int] = mapped_column(Integer, default=0)
+    positions_json: Mapped[list] = mapped_column(JSON, default=list)
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class SystemSetting(Base, TimestampMixin):
