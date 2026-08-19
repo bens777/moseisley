@@ -20,7 +20,8 @@ constraints. LLMs reason; deterministic code decides on money, permissions and
 safety. Always.
 
 **Don't want to run it yourself?** A hosted cantina is open at
-**<https://moseisley.sh>** — skip the setup, 14-day free trial, AI included.
+**<https://moseisley.sh>** — skip the setup: free with your own OpenRouter key
+(OpenRouter's free models), or upgrade for built-in AI.
 
 ---
 
@@ -111,6 +112,8 @@ injection inertness, scheduler locking/idempotency, agent adapter sanitization, 
 
 ## Documentation
 
+- [`docs/CAPABILITIES.md`](docs/CAPABILITIES.md) — what's actually in this
+  repository today, honestly labeled Available/Planned/Hosted-only.
 - [`docs/operations.md`](docs/operations.md) — running it: AI modes and the model
   pools you can edit, subscriptions and the Stripe portal, The Bar, fuel caps,
   local development without Docker.
