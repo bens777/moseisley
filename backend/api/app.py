@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from backend.core import killswitch
 from backend.core.config import get_settings
 from backend.core.logging import setup_logging
+from backend.providers import usage_policy
 from backend.providers.registry import LlmBudgetExceeded, NoProviderAvailable
 
 logger = logging.getLogger("mychief.api")
@@ -40,6 +41,14 @@ def create_app() -> FastAPI:
     async def llm_budget_handler(request: Request, exc: LlmBudgetExceeded):
         return JSONResponse(status_code=429, content={"detail": str(exc)})
 
+    @app.exception_handler(usage_policy.PaidCapabilityBlocked)
+    async def paid_capability_blocked_handler(request: Request, exc: usage_policy.PaidCapabilityBlocked):
+        return JSONResponse(status_code=402, content={"detail": str(exc)})
+
+    @app.exception_handler(usage_policy.ApprovalRequired)
+    async def approval_required_handler(request: Request, exc: usage_policy.ApprovalRequired):
+        return JSONResponse(status_code=428, content={"detail": str(exc)})
+
     @app.on_event("startup")
     async def seed_reference_data():
         from backend.core.db import get_sessionmaker
@@ -57,6 +66,7 @@ def create_app() -> FastAPI:
         return {"status": "ok", "service": "mychief-api", "version": "0.1.0"}
 
     from backend.api.routes import (
+        account,
         activity,
         agents,
         audio,
@@ -93,6 +103,7 @@ def create_app() -> FastAPI:
         trading,
         treasury,
         usage,
+        websearch,
         xray,
     )
     from backend.api.routes import settings as settings_routes
@@ -109,6 +120,7 @@ def create_app() -> FastAPI:
         security.router, skills.router, challenge.public_router,
         trading.router, trading.public_router, audio.router,
         friends.router, friends.public_router, genesis.router,
+        websearch.router, account.router,
     ):
         app.include_router(r, prefix="/api")
 

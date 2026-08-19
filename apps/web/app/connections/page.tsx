@@ -142,6 +142,98 @@ function OrchestratorPanel({ defs }: { defs: ProviderDef[] }) {
   );
 }
 
+/* ── Web search — the crew's research eyes, on the user's own key ──
+   Separate from the AI providers on purpose: a search key is not a brain. It
+   never opens the OpenRouter gate, never flips modes, and is not behind the
+   BYOK pass — Brave's free tier is the zero-cost path for everyone. */
+
+type SearchProviderRow = {
+  provider: string; label: string; connected: boolean; display_hint: string | null;
+};
+
+const SEARCH_META: Record<string, { note: string; url?: string; urlLabel?: string }> = {
+  brave: {
+    note: "free tier available · 2000 free searches/month",
+    url: "https://brave.com/search/api/", urlLabel: "get a key ↗",
+  },
+  tavily: {
+    note: "web research · free tier available",
+    url: "https://tavily.com/", urlLabel: "get a key ↗",
+  },
+  perplexity: { note: "paid, higher quality — answers come with citations" },
+};
+
+function WebSearchSection() {
+  const rows = useApi<SearchProviderRow[]>("/websearch");
+  const [keys, setKeys] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <Card title="Web Search — your crew's research eyes">
+      <p className="mb-3 text-xs text-ink-faint">
+        Used by the Orchestrator and Manager for real web research. Optional —
+        without one, you can always paste your own sources instead.
+      </p>
+      {rows.loading ? <Loading /> : (
+        <div className="space-y-3">
+          {(rows.data || []).map((r) => {
+            const meta = SEARCH_META[r.provider] || { note: "" };
+            return (
+              <div key={r.provider}
+                   className="flex flex-wrap items-center gap-2 border-b border-line/60 pb-3 last:border-0 last:pb-0">
+                <div className="w-44 shrink-0 text-sm">
+                  {r.label}
+                  <div className="text-[10px] leading-snug text-ink-faint">
+                    {meta.note}
+                    {meta.url && (
+                      <>
+                        {" · "}
+                        <a href={meta.url} target="_blank" rel="noopener noreferrer"
+                           className="text-signal hover:underline">{meta.urlLabel}</a>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {r.connected ? (
+                  <>
+                    <Pill color="green">connected</Pill>
+                    <span className="font-mono text-xs text-ink-faint">{r.display_hint || "•••"}</span>
+                    <Button variant="ghost" onClick={async () => {
+                      const res = await api<{ ok: boolean }>(`/websearch/${r.provider}/test`, { body: {} });
+                      alert(res.ok ? "Connection OK" : "Connection failed");
+                    }}>Test</Button>
+                    <Button variant="danger" onClick={async () => {
+                      await api(`/websearch/${r.provider}`, { method: "DELETE" });
+                      rows.reload();
+                    }}>Disconnect</Button>
+                  </>
+                ) : (
+                  <>
+                    <Pill color="gray">not connected</Pill>
+                    <Input placeholder="API key" className="w-full sm:max-w-xs"
+                           value={keys[r.provider] || ""}
+                           onChange={(e) => setKeys({ ...keys, [r.provider]: e.target.value })} />
+                    <Button variant="ghost" onClick={async () => {
+                      setError(null);
+                      try {
+                        await api("/websearch", { body: {
+                          provider: r.provider, api_key: keys[r.provider] || "" } });
+                        setKeys({ ...keys, [r.provider]: "" });
+                        rows.reload();
+                      } catch (e) { setError(e instanceof Error ? e.message : "failed"); }
+                    }}>Connect</Button>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {error && <p className="mt-2 text-xs text-crit">{error}</p>}
+    </Card>
+  );
+}
+
 export default function ConnectionsPage() {
   const providers = useApi<Provider[]>("/providers");
   const defs = useApi<ProviderDef[]>("/providers/definitions");
@@ -262,6 +354,8 @@ export default function ConnectionsPage() {
           })}
         </div>
       </Card>
+
+      <WebSearchSection />
 
       <Card title="Communication — Telegram">
         {telegram.data?.linked ? (

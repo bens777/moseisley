@@ -45,6 +45,10 @@ EVENT_TYPES = {
     # trader assistant: inbound signals from the user's own TradingView alerts
     "trading_webhook_issued", "trading_webhook_revoked",
     "trading_signal_received",
+    # GDPR account data portability (Art. 20) — erasure itself logs to the
+    # application log, not the Ledger (the erased user row can't be referenced
+    # by a Ledger event after deletion).
+    "account_exported",
 }
 
 

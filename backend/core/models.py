@@ -409,6 +409,12 @@ def _forbid_event_update(mapper, connection, target):  # pragma: no cover - guar
 
 @sa_event.listens_for(Event, "before_delete")
 def _forbid_event_delete(mapper, connection, target):  # pragma: no cover - guard
+    # The single sanctioned exception is GDPR account erasure, which runs inside
+    # backend.ops.account.LEDGER_ERASE and only deletes one user's own events.
+    from backend.ops.account import LEDGER_ERASE
+
+    if LEDGER_ERASE.get():
+        return
     raise RuntimeError("Ledger events are append-only and cannot be deleted")
 
 

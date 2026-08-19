@@ -33,7 +33,7 @@ PURPOSES = ["strategy", "market", "goal_compilation", "audit", "classification",
 
 # Purpose -> ordered provider preference (first enabled+configured wins). User-overridable
 # via SystemSetting key "model_routing".
-_CHAIN = ["anthropic", "openai", "gemini", "xai", "mistral", "deepseek", "openrouter", "custom", "mock"]
+_CHAIN = ["anthropic", "openai", "gemini", "xai", "mistral", "groq", "deepseek", "openrouter", "custom", "mock"]
 
 DEFAULT_ROUTING: dict[str, list[str]] = {
     "strategy": _CHAIN,
@@ -50,6 +50,7 @@ _BASE_URLS = {
     "openai": "https://api.openai.com/v1",
     "xai": "https://api.x.ai/v1",
     "mistral": "https://api.mistral.ai/v1",
+    "groq": "https://api.groq.com/openai/v1",
     "deepseek": "https://api.deepseek.com",
     "openrouter": "https://openrouter.ai/api/v1",
 }
@@ -59,6 +60,7 @@ _DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-5",
     "gemini": "gemini-2.5-flash",
     "mistral": "mistral-small-latest",
+    "groq": "openai/gpt-oss-120b",
     "deepseek": "deepseek-chat",
     "openrouter": "anthropic/claude-sonnet-5",
     "custom": "",
@@ -448,6 +450,29 @@ async def generate(
     if is_platform:
         await _check_factory_admission(db, user_id)
     requested_model = model_override or client.default_model
+
+    # The FREE_ONLY billing boundary: platform-funded calls are not the
+    # user's own money (excluded above via is_platform), and mock never
+    # costs anything. Everything else is a real provider call on the user's
+    # own key — DEV mode's OpenRouter ":free" models are the only case the
+    # codebase can verify costs nothing; every other provider+model is
+    # treated as paid, deliberately fail-closed (an unverifiable cost is
+    # never assumed to be free). This runs regardless of which path inside
+    # _resolve_for_role produced the client — orchestrator config, crew
+    # custom config, or purpose-routing fallback all land here the same way,
+    # so none of them can bypass the gate.
+    if not is_platform and row.provider != "mock":
+        is_free_call = (
+            row.provider == "openrouter"
+            and requested_model.endswith(factory_pool.FREE_SUFFIX)
+        )
+        if not is_free_call:
+            from backend.providers import usage_policy
+
+            user = await db.get(User, user_id)
+            usage_policy.require_paid_capability_allowed(
+                user, capability="llm", provider=row.provider)
+
     usage = LlmUsage(
         user_id=user_id, provider=row.provider, model=requested_model,
         requested_model=requested_model, purpose=purpose, crew_role=crew_role,
@@ -512,10 +537,12 @@ async def generate_with_x_search(
     allowed_x_handles: list[str] | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
-    crew_role: str = "radar",
+    crew_role: str | None = "radar",
     run_id: str | None = None,
     project_id: str | None = None,
     max_tokens: int = 1600,
+    model: str | None = None,
+    system_instruction: str | None = None,
 ) -> dict:
     """X live search through the CURRENT xAI Agent Tools API (2026): POST
     /v1/responses with a server-side `x_search` tool. The old `search_parameters`
@@ -525,6 +552,19 @@ async def generate_with_x_search(
     budget → execute → persist usage. Requires the user's connected, enabled
     xAI provider; with the mock provider connected, returns a scripted result
     (offline tests / demos) clearly marked mock=True.
+
+    `model` overrides the user's configured default_model for THIS call only
+    (a caller that needs a specific X-search-capable model, e.g. the general
+    X Intelligence tool, without coupling the user's everyday xai chat default
+    to it — backend/providers/x_intelligence.py). `system_instruction`, when
+    given, is sent as a leading system-role input item — never merged into the
+    user prompt text.
+
+    No `store_messages` is ever sent (deliberate, not an oversight): the
+    Responses API only persists conversation history server-side when a
+    caller opts in with store_messages=True (docs.x.ai/developers/tools/
+    advanced-usage, verified 2026-08) — omitting it keeps every X Intelligence
+    call off xAI's server-side storage by default.
     """
     import httpx as _httpx
 
@@ -547,8 +587,18 @@ async def generate_with_x_search(
         raise NoProviderAvailable(
             "X search needs a connected, enabled xAI provider (Connections → xAI)")
 
+    # Grok/xAI has no free tier for X search — every real call here is known
+    # to cost the user money on their own xAI account. Gated by the
+    # Intelligence Source usage policy, independent of the mock path above,
+    # which is free and always allowed.
+    from backend.providers import usage_policy
+
+    user = await db.get(User, user_id)
+    usage_policy.require_paid_capability_allowed(
+        user, capability="x_search", provider="xai")
+
     api_key = decrypt_secret(xai_row.encrypted_secret)
-    model = (xai_row.configuration_json or {}).get("default_model") or _DEFAULT_MODELS["xai"]
+    model = model or (xai_row.configuration_json or {}).get("default_model") or _DEFAULT_MODELS["xai"]
     tool: dict = {"type": "x_search"}
     if allowed_x_handles:
         tool["allowed_x_handles"] = [h.lstrip("@") for h in allowed_x_handles][:20]
@@ -556,6 +606,10 @@ async def generate_with_x_search(
         tool["from_date"] = from_date
     if to_date:
         tool["to_date"] = to_date
+    input_items: list[dict] = []
+    if system_instruction:
+        input_items.append({"role": "system", "content": system_instruction})
+    input_items.append({"role": "user", "content": prompt})
 
     usage = LlmUsage(user_id=user_id, provider="xai", model=model, requested_model=model,
                      purpose="market", crew_role=crew_role, run_id=run_id,
@@ -565,11 +619,17 @@ async def generate_with_x_search(
             resp = await http.post(
                 f"{_BASE_URLS['xai']}/responses",
                 headers={"Authorization": f"Bearer {api_key}"},
-                json={"model": model, "input": [{"role": "user", "content": prompt}],
+                json={"model": model, "input": input_items,
                       "tools": [tool], "max_output_tokens": max_tokens},
             )
         if resp.status_code >= 300:
-            raise ProviderError(f"xai responses API returned {resp.status_code}")
+            err = ProviderError(f"xai responses API returned {resp.status_code}",
+                                status_code=resp.status_code)
+            try:
+                err.body_text = resp.text[:500]
+            except Exception:  # noqa: BLE001 — classification is best-effort, never fatal
+                err.body_text = ""
+            raise err
         data = resp.json()
     except Exception:
         db.add(usage)
@@ -580,13 +640,18 @@ async def generate_with_x_search(
     # output text: concatenate output_text blocks from message items
     text_parts: list[str] = []
     citations: list[str] = list(data.get("citations") or [])
+    citation_titles: dict[str, str] = {}
     for item in data.get("output") or []:
         for block in item.get("content") or []:
             if block.get("type") == "output_text":
                 text_parts.append(block.get("text", ""))
                 for ann in block.get("annotations") or []:
                     if ann.get("type") == "url_citation" and ann.get("url"):
-                        citations.append(ann["url"])
+                        url = ann["url"]
+                        citations.append(url)
+                        title = ann.get("title")
+                        if title:
+                            citation_titles[url] = str(title)
     u = data.get("usage") or {}
     usage.status = "success"
     usage.model = data.get("model") or model
@@ -596,12 +661,23 @@ async def generate_with_x_search(
     usage.reasoning_tokens = u.get("reasoning_tokens")
     usage.total_tokens = u.get("total_tokens")
     usage.finished_at = datetime.now(UTC)
-    usage.cost_source = "UNKNOWN"  # responses+tools pricing not estimated — never invented
+    # Every xAI response — including Responses API + server-side tool calls —
+    # carries its exact billed cost in usage.cost_in_usd_ticks (1 USD = 10^10
+    # ticks; docs.x.ai/developers/cost-tracking, verified 2026-08). Captured
+    # exactly when present; never estimated, never invented when it's not.
+    ticks = u.get("cost_in_usd_ticks")
+    if isinstance(ticks, (int, float)):
+        usage.provider_reported_cost = ticks / 10_000_000_000
+        usage.cost_source = "PROVIDER_REPORTED"
+    else:
+        usage.cost_source = "UNKNOWN"
     db.add(usage)
     await db.flush()
     seen: set[str] = set()
     unique_citations = [c for c in citations if not (c in seen or seen.add(c))]
     return {"text": "\n".join(text_parts), "citations": unique_citations,
+            "citation_titles": {cu: citation_titles[cu] for cu in unique_citations
+                               if cu in citation_titles},
             "model": usage.model, "mock": False}
 
 
@@ -626,3 +702,211 @@ async def complete(
         db, user_id, messages, crew_role=role_map.get(purpose), purpose=purpose,
         run_id=run_id, max_tokens=max_tokens, temperature=temperature, json_mode=json_mode,
     )
+
+
+async def _groq_audio_request(
+    db: AsyncSession, user_id: str, endpoint_url: str, audio_bytes: bytes, filename: str,
+    model: str, form_fields: list[tuple[str, str]], *,
+    run_id: str | None, project_id: str | None,
+) -> dict:
+    """Shared plumbing for Groq audio transcription/translation: kill switch →
+    user's own LLM budget cap → the same paid-capability policy gate x_search
+    uses → an authenticated multipart POST → LlmUsage persisted → the raw
+    parsed JSON body, which the caller (backend/providers/audio_intelligence.py)
+    normalizes. Registry stays generic here on purpose — it does not need to
+    know segment/word shape, only how to reach Groq with this user's own
+    credential."""
+    import httpx as _httpx
+
+    from backend.core.models import LlmUsage
+
+    await killswitch.require_operational(db, user_id, killswitch.DISABLE_LLM)
+    await check_llm_budget(db, user_id)
+
+    groq_row = await get_provider_row(db, user_id, "groq")
+    if groq_row is None or not groq_row.enabled or not groq_row.encrypted_secret:
+        raise NoProviderAvailable(
+            "Audio Intelligence needs a connected, enabled Groq provider (Connections → Groq)")
+
+    from backend.providers import usage_policy
+
+    user = await db.get(User, user_id)
+    usage_policy.require_paid_capability_allowed(
+        user, capability="audio_transcription", provider="groq")
+
+    api_key = decrypt_secret(groq_row.encrypted_secret)
+    usage = LlmUsage(user_id=user_id, provider="groq", model=model, requested_model=model,
+                     purpose="stt", run_id=run_id, project_id=project_id, status="failed")
+    try:
+        async with _httpx.AsyncClient(timeout=180.0) as http:
+            resp = await http.post(
+                endpoint_url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                data=form_fields,
+                files={"file": (filename, audio_bytes)},
+            )
+        if resp.status_code >= 300:
+            err = ProviderError(f"groq audio API returned {resp.status_code}",
+                                status_code=resp.status_code)
+            try:
+                err.body_text = resp.text[:500]
+            except Exception:  # noqa: BLE001 — classification is best-effort, never fatal
+                err.body_text = ""
+            err.headers = resp.headers
+            raise err
+        try:
+            data = resp.json()
+        except ValueError as e:
+            raise ProviderError("groq audio API returned a malformed response",
+                                status_code=resp.status_code) from e
+    except Exception:
+        db.add(usage)
+        usage.finished_at = datetime.now(UTC)
+        await db.flush()
+        raise
+
+    usage.status = "success"
+    # Documented segment/word metadata fields (console.groq.com/docs/speech-to-text,
+    # verified 2026-08) do not confirm a "usage" object on every response shape —
+    # captured exactly when present, never estimated or invented when it's not.
+    u = data.get("usage") or {}
+    usage.input_tokens = u.get("input_tokens")
+    usage.output_tokens = u.get("output_tokens")
+    usage.total_tokens = u.get("total_tokens")
+    cost = u.get("cost")
+    if isinstance(cost, (int, float)):
+        usage.provider_reported_cost = float(cost)
+        usage.cost_source = "PROVIDER_REPORTED"
+    else:
+        usage.cost_source = "UNKNOWN"
+    usage.finished_at = datetime.now(UTC)
+    db.add(usage)
+    await db.flush()
+    return data
+
+
+async def transcribe_with_groq(
+    db: AsyncSession, user_id: str, audio_bytes: bytes, *, filename: str, model: str,
+    language: str | None = None, prompt: str | None = None,
+    timestamp_granularities: list[str] | None = None, response_format: str = "verbose_json",
+    run_id: str | None = None, project_id: str | None = None,
+) -> dict:
+    """POST /openai/v1/audio/transcriptions (docs.groq.com/docs/speech-to-text,
+    verified 2026-08). `model` is required — the caller (audio_intelligence.py)
+    owns the default so this stays uncoupled from one model name."""
+    form: list[tuple[str, str]] = [("model", model), ("response_format", response_format)]
+    if language:
+        form.append(("language", language))
+    if prompt:
+        form.append(("prompt", prompt))
+    for granularity in timestamp_granularities or []:
+        form.append(("timestamp_granularities[]", granularity))
+    return await _groq_audio_request(
+        db, user_id, f"{_BASE_URLS['groq']}/audio/transcriptions", audio_bytes, filename,
+        model, form, run_id=run_id, project_id=project_id)
+
+
+async def translate_with_groq(
+    db: AsyncSession, user_id: str, audio_bytes: bytes, *, filename: str, model: str,
+    prompt: str | None = None, response_format: str = "json",
+    run_id: str | None = None, project_id: str | None = None,
+) -> dict:
+    """POST /openai/v1/audio/translations — always TO English. Unlike
+    transcriptions, this endpoint does not accept `language` or
+    `timestamp_granularities` (docs.groq.com/docs/api-reference, verified
+    2026-08) — never sent, never simulated."""
+    form: list[tuple[str, str]] = [("model", model), ("response_format", response_format)]
+    if prompt:
+        form.append(("prompt", prompt))
+    return await _groq_audio_request(
+        db, user_id, f"{_BASE_URLS['groq']}/audio/translations", audio_bytes, filename,
+        model, form, run_id=run_id, project_id=project_id)
+
+
+async def ocr_with_mistral(
+    db: AsyncSession, user_id: str, *, document: dict, model: str,
+    pages: list[int] | None = None,
+    document_annotation_format: dict | None = None,
+    document_annotation_prompt: str | None = None,
+    run_id: str | None = None, project_id: str | None = None,
+) -> dict:
+    """POST /v1/ocr (docs.mistral.ai/api/endpoint/ocr, verified 2026-08).
+
+    `document` is always the caller's already-built inline payload — a
+    `{"type": "document_url"|"image_url", "document_url"|"image_url":
+    "data:<mime>;base64,<...>"}` dict (backend/providers/
+    document_intelligence.py). This function NEVER calls Mistral's separate
+    Files API: the document travels as an inline base64 data URL in the
+    request body, so no provider-side temporary file object is ever created
+    and no delete/cleanup step is needed.
+
+    Same instrumentation contract as generate_with_x_search/
+    transcribe_with_groq: kill switch → user's own LLM budget cap → the same
+    paid-capability policy gate → an authenticated POST → LlmUsage persisted
+    → the raw parsed JSON body, which the caller normalizes (pages/markdown/
+    tables live inside page markdown; document_annotation is a JSON string
+    when structured extraction was requested)."""
+    import httpx as _httpx
+
+    from backend.core.models import LlmUsage
+
+    await killswitch.require_operational(db, user_id, killswitch.DISABLE_LLM)
+    await check_llm_budget(db, user_id)
+
+    mistral_row = await get_provider_row(db, user_id, "mistral")
+    if mistral_row is None or not mistral_row.enabled or not mistral_row.encrypted_secret:
+        raise NoProviderAvailable(
+            "Document Intelligence needs a connected, enabled Mistral provider "
+            "(Connections → Mistral)")
+
+    from backend.providers import usage_policy
+
+    user = await db.get(User, user_id)
+    usage_policy.require_paid_capability_allowed(
+        user, capability="document_ocr", provider="mistral")
+
+    api_key = decrypt_secret(mistral_row.encrypted_secret)
+    body: dict = {"model": model, "document": document}
+    if pages:
+        body["pages"] = pages
+    if document_annotation_format:
+        body["document_annotation_format"] = document_annotation_format
+    if document_annotation_prompt:
+        body["document_annotation_prompt"] = document_annotation_prompt
+
+    usage = LlmUsage(user_id=user_id, provider="mistral", model=model, requested_model=model,
+                     purpose="documents", run_id=run_id, project_id=project_id, status="failed")
+    try:
+        async with _httpx.AsyncClient(timeout=180.0) as http:
+            resp = await http.post(
+                f"{_BASE_URLS['mistral']}/ocr",
+                headers={"Authorization": f"Bearer {api_key}"}, json=body)
+        if resp.status_code >= 300:
+            err = ProviderError(f"mistral ocr API returned {resp.status_code}",
+                                status_code=resp.status_code)
+            try:
+                err.body_text = resp.text[:500]
+            except Exception:  # noqa: BLE001 — classification is best-effort, never fatal
+                err.body_text = ""
+            raise err
+        try:
+            data = resp.json()
+        except ValueError as e:
+            raise ProviderError("mistral ocr API returned a malformed response",
+                                status_code=resp.status_code) from e
+    except Exception:
+        db.add(usage)
+        usage.finished_at = datetime.now(UTC)
+        await db.flush()
+        raise
+
+    usage.status = "success"
+    usage.model = data.get("model") or model
+    # The OCR response carries usage_info (pages_processed/doc_size_bytes), not a
+    # monetary cost field (docs.mistral.ai/api/endpoint/ocr, verified 2026-08) —
+    # never estimated, never a stale hardcoded per-page rate.
+    usage.cost_source = "UNKNOWN"
+    usage.finished_at = datetime.now(UTC)
+    db.add(usage)
+    await db.flush()
+    return data

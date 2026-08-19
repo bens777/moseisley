@@ -308,3 +308,56 @@ class GeminiClient(BaseLlmClient):
             resp = await client.get(f"{self.base_url}/models",
                                     headers={"x-goog-api-key": self.api_key})
         return resp.status_code == 200
+
+    async def analyze_youtube(
+        self, youtube_url: str, instruction: str, *, model: str | None = None,
+        system_instruction: str | None = None, max_tokens: int = 4096,
+        temperature: float = 0.2, response_mime_type: str | None = None,
+    ) -> LlmResult:
+        """Gemini's native YouTube video understanding — a `file_data` part
+        with `file_uri` set to the video URL, exactly like the official docs
+        (ai.google.dev/gemini-api/docs/video-understanding, verified
+        2026-08): the SAME generateContent endpoint `complete()` already
+        uses, just a multimodal `contents` shape instead of a chat-message
+        one. Gemini's own infrastructure fetches the video server-side from
+        the URL — this call never downloads, proxies, or stores any video
+        data itself. Preview capability per Google's own docs: one video per
+        request, public videos only (a private/unlisted/inaccessible one is
+        Gemini's own rejection, surfaced here as a ProviderError, never
+        guessed at by this client)."""
+        target = model or self.default_model
+        payload: dict = {
+            "contents": [{
+                "parts": [
+                    {"file_data": {"file_uri": youtube_url}},
+                    {"text": instruction},
+                ],
+            }],
+            "generationConfig": {"maxOutputTokens": max_tokens, "temperature": temperature},
+        }
+        if system_instruction:
+            payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+        if response_mime_type:
+            payload["generationConfig"]["responseMimeType"] = response_mime_type
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+            resp = await client.post(
+                f"{self.base_url}/models/{target}:generateContent",
+                headers={"x-goog-api-key": self.api_key},
+                json=payload,
+            )
+        if resp.status_code != 200:
+            raise ProviderError(f"provider returned {resp.status_code}", status_code=resp.status_code)
+        data = resp.json()
+        candidates = data.get("candidates") or []
+        text = ""
+        if candidates:
+            text = "".join(p.get("text", "")
+                           for p in (candidates[0].get("content") or {}).get("parts", []))
+        return LlmResult(
+            text=text,
+            model=data.get("modelVersion", target),
+            provider_request_id=data.get("responseId"),
+            raw={"prompt_feedback": data.get("promptFeedback"),
+                 "finish_reason": candidates[0].get("finishReason") if candidates else None},
+            **normalize_gemini_usage(data.get("usageMetadata")),
+        )

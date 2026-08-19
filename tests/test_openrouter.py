@@ -71,6 +71,11 @@ async def test_openrouter_full_acceptance(client, auth, db_session, monkeypatch)
     }, headers=auth)
     assert resp.status_code == 200
 
+    # "anthropic/claude-sonnet-5" has no ":free" suffix — a real paid
+    # OpenRouter call, which now needs explicit opt-in (FREE_ONLY is the
+    # default and blocks it, credits or not — see test_usage_policy.py).
+    await client.put("/api/providers/policy", json={"policy": "paid_allowed"}, headers=auth)
+
     # 8-12: execute → requested + actual model + usage + provider-reported cost stored
     me = (await client.get("/api/me", headers=auth)).json()
     from backend.providers import registry
